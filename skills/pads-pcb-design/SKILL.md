@@ -53,7 +53,7 @@ Add company- or product-specific rules to the last section of this file. It is e
 - Increase clearance between high voltage (24 V input, etc.) and signals (e.g. ≥ 0.5 mm, depending on rating).
 - Keep crystal traces short, with no vias, surrounded by GND.
 
-## How to route with the pads MCP (LLM routing)
+## How to route with the pads MCP (agent routing)
 
 1. Start with `layout_overview`: board outline, layers, via types, rules, unrouted connections per net.
    - If rules are missing or wrong, fix them first with `layout_set_rules`: class widths, clearance, and auto_route only if the user wants it.

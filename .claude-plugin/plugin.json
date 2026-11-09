@@ -1,11 +1,12 @@
 {
   "name": "pads",
   "version": "0.2.0",
-  "description": "PADS Logic / PADS Layout 9.x automation: schematic drawing, LLM-planned PCB routing with PADS Router DRC, rules and impedance (MCP server) plus a PCB design-rule skill",
+  "description": "PADS Logic / PADS Layout 9.x automation: schematic drawing, agent-planned PCB routing with PADS Router DRC, rules and impedance (MCP server) plus a PCB design-rule skill",
   "author": {
     "name": "BlessingQ"
   },
   "repository": "https://github.com/BlessingQ/pads-mcp",
+  "license": "MIT",
   "keywords": ["pads", "eda", "pcb", "schematic", "routing", "mcp"],
   "mcpServers": {
     "pads": {

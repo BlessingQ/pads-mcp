@@ -398,7 +398,7 @@ class PadsLayout:
 
     # ------------------------------------------------------------------ routing
     def route(self, routes: list[dict]) -> dict:
-        """Write LLM-planned routes. Each route: {from, to, layer, path, width?, via?}."""
+        """Write agent-planned routes. Each route: {from, to, layer, path, width?, via?}."""
         def edit(d, pcb: P.PcbAscii):
             f = pcb._unit_factor(_header_unit(pcb))         # file units per mm
             R = P.Routes(pcb)

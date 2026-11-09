@@ -6,7 +6,7 @@ An MCP server that lets an AI assistant (Claude Code, Codex, GitHub Copilot) dri
 **PADS Layout / PADS Router (PCB)** 9.x through COM automation.
 
 - **Schematics**: place parts, draw wires, attach power/GND symbols and net labels.
-- **PCB routing with the LLM**: the model plans each trace (layer, corners, vias, width) from pad and obstacle data;
+- **Agent PCB routing**: the AI agent plans each trace (layer, corners, vias, width) from pad and obstacle data;
   the server writes it into the design exactly as planned and checks it with the PADS Router DRC.
   The PADS autorouter is available too, but only when you ask for it.
 - **Rules and impedance**: net classes, width/clearance/high-speed rules, layer stack-up, and trace width for a
@@ -27,7 +27,7 @@ AI client ⇄ pads-mcp (Python, stdio) ⇄ COM ⇄ PADS Logic / PADS Layout / PA
 | PCB design-rule check, optional autorouting | PADS Router COM (`BlazeRouter.Application`) on a copy of the saved PCB |
 | Visual check | Window capture (`pads_screenshot`) |
 
-## LLM routing workflow (PCB)
+## Agent routing workflow (PCB)
 
 1. `layout_overview` → board outline, layers, stack-up, via types, net classes/rules, unrouted connections per net.
 2. `layout_get_net` / `layout_region` → pins with pad layer and size, existing tracks and vias around the path.
@@ -207,7 +207,6 @@ The Claude Code plugin installs both. Codex and Copilot use the same `SKILL.md` 
 3. Update the `@vX.Y.Z` in the install snippets.
 
 - `work\` (design copies, backups) and design files (`*.sch`, `*.pcb`, `*.asc`) are excluded by `.gitignore`.
-- A public repository without a `LICENSE` cannot be reused by others. Add one before going public.
 
 ## Development
 
@@ -253,3 +252,7 @@ claude mcp add --scope user pads -- "$PWD\.venv\Scripts\python.exe" -m pads_mcp.
 - Routes are point-to-point between pins. T-junctions in the middle of a trace and copper pours are not supported yet.
 - Impedance uses closed-form formulas (±5–10 %). Confirm with the fab.
 - Schematic: net label text can sit slightly off the symbol, and `logic_move_part` does not reroute attached wires.
+
+## License
+
+[MIT](LICENSE)

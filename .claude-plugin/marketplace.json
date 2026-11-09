@@ -10,7 +10,7 @@
     {
       "name": "pads",
       "source": "./",
-      "description": "PADS 9.x schematic drawing and LLM-planned PCB routing (MCP server via uvx) + PCB design-rule skill",
+      "description": "PADS 9.x schematic drawing and agent-planned PCB routing (MCP server via uvx) + PCB design-rule skill",
       "version": "0.2.0"
     }
   ]

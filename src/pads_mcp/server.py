@@ -55,7 +55,7 @@ local connections between nearby pins.
 PCB (PADS Layout) - all PCB coordinates are mm, y up. Layers: 1 = Top, N = Bottom.
 - PADS Layout COM cannot draw traces: layout_route writes YOUR planned path into the design
   (ASCII round trip of the whole PCB, atomic, backup in work/history, layout_undo restores).
-- LLM routing loop: layout_overview -> layout_get_net / layout_region (pins, pad layers, existing
+- Agent routing loop: layout_overview -> layout_get_net / layout_region (pins, pad layers, existing
   copper) -> plan the path yourself (layer, corners, vias, width from the net-class rules) ->
   layout_route (batch several connections) -> layout_drc (PADS Router checker) -> fix -> screenshot.
 - SMD pads exist only on their side's layer: a route must leave/enter them on that layer; change

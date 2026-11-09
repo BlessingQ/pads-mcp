@@ -6,7 +6,7 @@ AI 어시스턴트(Claude Code, Codex, GitHub Copilot)가 **PADS Logic(회로도
 COM 자동화로 다루게 해 주는 MCP 서버입니다.
 
 - **회로도**: 부품 배치, 와이어 연결, 전원/GND 심볼, 넷 라벨.
-- **LLM 배선(PCB)**: 모델이 패드와 장애물 정보를 보고 층, 꺾이는 점, 비아, 선폭까지 직접 경로를 정합니다.
+- **Agent 배선(PCB)**: AI 에이전트가 패드와 장애물 정보를 보고 층, 꺾이는 점, 비아, 선폭까지 직접 경로를 정합니다.
   서버는 그 경로를 그대로 설계에 넣고 PADS Router DRC로 검사합니다.
   PADS 자동 배선기도 있지만, 사용자가 요청할 때만 씁니다.
 - **규칙과 임피던스**: 넷 클래스, 선폭/간격/고속 규칙, 적층 구조, 목표 임피던스에 맞는 선폭 계산.
@@ -26,7 +26,7 @@ AI 클라이언트 ⇄ pads-mcp (Python, stdio) ⇄ COM ⇄ PADS Logic / PADS La
 | PCB DRC, (선택) 자동 배선 | PADS Router COM (`BlazeRouter.Application`), 저장된 PCB의 복사본에서 실행 |
 | 시각 확인 | 창 캡처 (`pads_screenshot`) |
 
-## LLM 배선 흐름 (PCB)
+## Agent 배선 흐름 (PCB)
 
 1. `layout_overview`로 보드 외곽, 층, 적층, 비아 종류, 넷 클래스와 규칙, 넷별 미배선 연결 수를 봅니다.
 2. `layout_get_net` / `layout_region`으로 핀(패드 층과 크기)과 경로 주변의 기존 트레이스·비아를 봅니다.
@@ -205,7 +205,6 @@ Claude Code 플러그인은 둘을 함께 설치합니다. Codex와 Copilot은 �
 3. 설치 예시의 `@vX.Y.Z`를 새 버전으로 바꿉니다.
 
 - `work\`(설계 복사본, 백업)와 설계 파일(`*.sch`, `*.pcb`, `*.asc`)은 `.gitignore`로 제외됩니다.
-- `LICENSE`가 없는 공개 저장소는 다른 사람이 재사용할 수 없습니다. 공개로 바꾸기 전에 추가하세요.
 
 ## 개발 환경
 
@@ -251,3 +250,7 @@ claude mcp add --scope user pads -- "$PWD\.venv\Scripts\python.exe" -m pads_mcp.
 - 배선은 핀과 핀 사이 경로만 지원합니다. 트레이스 중간에서 갈라지는 T 분기와 동박 채우기(pour)는 아직 지원하지 않습니다.
 - 임피던스는 근사식(±5~10 %)으로 계산합니다. 최종 값은 제조사에서 확인하세요.
 - 회로도: 넷 라벨 글자가 심볼에서 조금 떨어져 보일 수 있고, `logic_move_part`는 붙어 있던 와이어를 다시 그리지 않습니다.
+
+## 라이선스
+
+[MIT](LICENSE)
