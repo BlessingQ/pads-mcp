@@ -125,12 +125,18 @@ PCB를 한 번 편집할 때마다 설계 전체를 다시 가져옵니다. 부�
    ```
 4. 설치를 확인합니다. 첫 실행은 의존성을 내려받느라 10~30초 걸립니다.
    ```powershell
-   uvx --from git+https://github.com/BlessingQ/pads-mcp@v0.2.0 pads-mcp --check
+   uvx --from git+https://github.com/BlessingQ/pads-mcp@latest pads-mcp --check
    ```
    PADS Logic / Layout / Router가 모두 `OK`로 나오고 마지막에 `ready`가 나오면 됩니다.
 
-`uvx`는 Python과 의존성을 담은 격리 환경을 자동으로 만들어 주므로 venv나 pip 작업이 필요 없습니다.
-`@vX.Y.Z`로 버전을 고정하세요. 업그레이드할 때는 태그를 바꾸고 클라이언트를 다시 시작합니다.
+`uvx`는 Python과 의존성을 담은 격리 환경을 uv 캐시(`%LOCALAPPDATA%\uv\cache`)에 만들고 그 안에서 서버를 실행합니다.
+따로 설치되는 것이 없고 venv나 pip 작업도 필요 없습니다. `uv cache clean`으로 지우면 다음 실행 때 다시 만들어집니다.
+
+**버전.** `@latest`는 항상 최신 릴리스를 가리키는 브랜치입니다.
+`uvx`는 클라이언트가 서버를 시작할 때마다 GitHub을 확인하므로, 새 릴리스가 나오면 설정을 바꾸지 않아도 클라이언트를 다시 시작한 뒤부터 새 버전이 쓰입니다.
+특정 릴리스에 머물려면 `latest` 대신 태그를 씁니다(예: `@v0.2.0`).
+어느 쪽이든 GitHub에 접속할 수 있어야 서버가 시작됩니다.
+지금 쓰는 버전은 위 확인 명령에서 `--check` 대신 `--version`을 붙이면 나옵니다.
 
 ### Claude Code
 
@@ -144,7 +150,7 @@ PCB를 한 번 편집할 때마다 설계 전체를 다시 가져옵니다. 부�
 
 **방법 B: MCP 서버만 설치.**
 ```powershell
-claude mcp add --scope user --transport stdio pads -- uvx --from git+https://github.com/BlessingQ/pads-mcp@v0.2.0 pads-mcp
+claude mcp add --scope user --transport stdio pads -- uvx --from git+https://github.com/BlessingQ/pads-mcp@latest pads-mcp
 ```
 스킬도 쓰려면 `skills\pads-pcb-design` 폴더를 `%USERPROFILE%\.claude\skills\`에 복사합니다.
 `claude mcp list`에서 `pads ... ✔ Connected`가 보이거나, 세션 안에서 `/mcp`로 확인할 수 있으면 됩니다.
@@ -155,11 +161,11 @@ claude mcp add --scope user --transport stdio pads -- uvx --from git+https://git
 ```toml
 [mcp_servers.pads]
 command = "uvx"
-args = ["--from", "git+https://github.com/BlessingQ/pads-mcp@v0.2.0", "pads-mcp"]
+args = ["--from", "git+https://github.com/BlessingQ/pads-mcp@latest", "pads-mcp"]
 startup_timeout_sec = 120   # 기본값 10초는 uvx 첫 다운로드에 부족
 tool_timeout_sec = 600      # 기본값 60초, PCB 편집 + DRC는 1분 이상 걸릴 수 있음
 ```
-`codex mcp add pads -- uvx --from git+https://github.com/BlessingQ/pads-mcp@v0.2.0 pads-mcp`로 추가해도 됩니다.
+`codex mcp add pads -- uvx --from git+https://github.com/BlessingQ/pads-mcp@latest pads-mcp`로 추가해도 됩니다.
 이 명령에는 타임아웃 옵션이 없으므로, 추가한 뒤 위의 타임아웃 두 줄을 `config.toml`에 직접 넣어 주세요.
 - 스킬: `skills\pads-pcb-design` 폴더를 `%USERPROFILE%\.agents\skills\`(사용자 전체) 또는 저장소의 `.agents\skills\`에 복사합니다.
 - `codex mcp list` 또는 세션 안의 `/mcp`로 확인합니다.
@@ -170,12 +176,12 @@ tool_timeout_sec = 600      # 기본값 60초, PCB 편집 + DRC는 1분 이상 �
 - **Copilot 공용 설정** (현재 "Add Server" 기본 방식): `%USERPROFILE%\.copilot\mcp-config.json`
   ```json
   { "mcpServers": { "pads": { "command": "uvx",
-      "args": ["--from", "git+https://github.com/BlessingQ/pads-mcp@v0.2.0", "pads-mcp"] } } }
+      "args": ["--from", "git+https://github.com/BlessingQ/pads-mcp@latest", "pads-mcp"] } } }
   ```
 - **VS Code 형식**: 명령 팔레트 → **MCP: Open User Configuration**, 또는 작업 공간의 `.vscode/mcp.json`
   ```json
   { "servers": { "pads": { "type": "stdio", "command": "uvx",
-      "args": ["--from", "git+https://github.com/BlessingQ/pads-mcp@v0.2.0", "pads-mcp"] } } }
+      "args": ["--from", "git+https://github.com/BlessingQ/pads-mcp@latest", "pads-mcp"] } } }
   ```
 
 그다음:
@@ -202,7 +208,8 @@ Claude Code 플러그인은 둘을 함께 설치합니다. Codex와 Copilot은 �
 
 1. `pyproject.toml`, `src/pads_mcp/__init__.py`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`의 버전을 올립니다.
 2. 커밋한 뒤 `git tag vX.Y.Z && git push && git push --tags`를 실행합니다.
-3. 설치 예시의 `@vX.Y.Z`를 새 버전으로 바꿉니다.
+3. `git push origin main:latest`로 `latest`를 새 릴리스로 옮깁니다. `@latest` 사용자는 클라이언트를 다시 시작하면 새 버전을 받습니다.
+   릴리스하지 않은 커밋은 `latest`에 올리지 않습니다. 설치 예시는 고칠 필요가 없습니다.
 
 - `work\`(설계 복사본, 백업)와 설계 파일(`*.sch`, `*.pcb`, `*.asc`)은 `.gitignore`로 제외됩니다.
 

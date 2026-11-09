@@ -127,12 +127,18 @@ Each PCB edit re-imports the whole design. That takes about 30–60 s on a 160-p
    ```
 4. Check the installation. The first run downloads the dependencies and takes 10–30 s:
    ```powershell
-   uvx --from git+https://github.com/BlessingQ/pads-mcp@v0.2.0 pads-mcp --check
+   uvx --from git+https://github.com/BlessingQ/pads-mcp@latest pads-mcp --check
    ```
    You should see `OK` for PADS Logic / Layout / Router, then `ready`.
 
-`uvx` creates an isolated environment with Python and all dependencies, so there is no venv or pip step.
-Pin a release with `@vX.Y.Z`. To upgrade, change the tag and restart the client.
+`uvx` runs the server from an isolated environment in the uv cache (`%LOCALAPPDATA%\uv\cache`) that holds Python and all dependencies.
+Nothing is installed, and there is no venv or pip step. `uv cache clean` deletes the environment, and the next start rebuilds it.
+
+**Versions.** `@latest` is a branch that always points at the newest release.
+`uvx` checks GitHub every time the client starts the server, so a new release is used after the next client restart, with no change to the configuration.
+To stay on one release, use its tag instead of `latest`, e.g. `@v0.2.0`.
+Either way, the server can only start when GitHub is reachable.
+To see the version in use, run the check command with `--version` instead of `--check`.
 
 ### Claude Code
 
@@ -146,7 +152,7 @@ The repository is itself the marketplace (`.claude-plugin/marketplace.json`), so
 
 **Option B: MCP server only.**
 ```powershell
-claude mcp add --scope user --transport stdio pads -- uvx --from git+https://github.com/BlessingQ/pads-mcp@v0.2.0 pads-mcp
+claude mcp add --scope user --transport stdio pads -- uvx --from git+https://github.com/BlessingQ/pads-mcp@latest pads-mcp
 ```
 For the skill, copy `skills\pads-pcb-design` to `%USERPROFILE%\.claude\skills\`.
 Check with `claude mcp list` (`pads ... ✔ Connected`) or `/mcp` in a session.
@@ -157,11 +163,11 @@ Add the server to `%USERPROFILE%\.codex\config.toml`:
 ```toml
 [mcp_servers.pads]
 command = "uvx"
-args = ["--from", "git+https://github.com/BlessingQ/pads-mcp@v0.2.0", "pads-mcp"]
+args = ["--from", "git+https://github.com/BlessingQ/pads-mcp@latest", "pads-mcp"]
 startup_timeout_sec = 120   # default 10 s is too short for the first uvx download
 tool_timeout_sec = 600      # default 60 s; a PCB edit + DRC can take a minute or more
 ```
-`codex mcp add pads -- uvx --from git+https://github.com/BlessingQ/pads-mcp@v0.2.0 pads-mcp` also works.
+`codex mcp add pads -- uvx --from git+https://github.com/BlessingQ/pads-mcp@latest pads-mcp` also works.
 It has no timeout options, so add the two timeout lines to `config.toml` afterwards.
 - Skill: copy `skills\pads-pcb-design` to `%USERPROFILE%\.agents\skills\` (user) or `.agents\skills\` in a repository.
 - Check with `codex mcp list` or `/mcp` in a session.
@@ -172,12 +178,12 @@ Use either of these configuration files.
 - **Portable Copilot config** (current default of the "Add Server" flow): `%USERPROFILE%\.copilot\mcp-config.json`
   ```json
   { "mcpServers": { "pads": { "command": "uvx",
-      "args": ["--from", "git+https://github.com/BlessingQ/pads-mcp@v0.2.0", "pads-mcp"] } } }
+      "args": ["--from", "git+https://github.com/BlessingQ/pads-mcp@latest", "pads-mcp"] } } }
   ```
 - **VS Code format**: Command Palette → **MCP: Open User Configuration**, or the workspace `.vscode/mcp.json`:
   ```json
   { "servers": { "pads": { "type": "stdio", "command": "uvx",
-      "args": ["--from", "git+https://github.com/BlessingQ/pads-mcp@v0.2.0", "pads-mcp"] } } }
+      "args": ["--from", "git+https://github.com/BlessingQ/pads-mcp@latest", "pads-mcp"] } } }
   ```
 
 Then:
@@ -204,7 +210,8 @@ The Claude Code plugin installs both. Codex and Copilot use the same `SKILL.md` 
 
 1. Bump the version in `pyproject.toml`, `src/pads_mcp/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 2. Commit, then `git tag vX.Y.Z && git push && git push --tags`.
-3. Update the `@vX.Y.Z` in the install snippets.
+3. Move `latest` to the release with `git push origin main:latest`. Users on `@latest` get it at their next client restart.
+   Do not push unreleased commits to `latest`; the install snippets never need editing.
 
 - `work\` (design copies, backups) and design files (`*.sch`, `*.pcb`, `*.asc`) are excluded by `.gitignore`.
 
