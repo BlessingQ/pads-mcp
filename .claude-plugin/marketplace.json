@@ -1,0 +1,17 @@
+{
+  "name": "pads-mcp",
+  "owner": {
+    "name": "BlessingQ"
+  },
+  "metadata": {
+    "description": "PADS Logic / PADS Layout 9.x automation for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "pads",
+      "source": "./",
+      "description": "PADS 9.x schematic drawing and LLM-planned PCB routing (MCP server via uvx) + PCB design-rule skill",
+      "version": "0.2.0"
+    }
+  ]
+}
