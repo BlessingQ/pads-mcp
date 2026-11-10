@@ -1,4 +1,4 @@
-"""PADS Router (BlazeRouter.Application) via COM: design-rule check and (optional) autorouting.
+"""PADS Router (BlazeRouter.Application) via COM: design-rule check only (routing is done in PADS Layout).
 
 The router always works on a COPY of the saved .pcb opened without a file lock, so PADS Layout keeps
 the original. Router COM cannot set rules; rules come from the design (layout_set_rules).
@@ -20,9 +20,6 @@ MM = 4                     # blazeUnit metric
 NET = 2                    # blazeObjectTypeNet
 ERROR_CLASS = {0: "clearance", 1: "fabrication", 2: "testability", 3: "connectivity", 4: "length",
                5: "diffpair", 6: "pcb", 7: "max_via_count"}
-PASS_TYPES = {"fanout": 2, "patterns": 3, "route": 4, "optimize": 5, "miters": 6, "test_points": 7,
-              "tune": 8, "center": 9}
-INTENSITY = {"low": 1, "medium": 2, "high": 3}
 
 
 class PadsRouter:
@@ -112,46 +109,3 @@ class PadsRouter:
         return {"unit": "mm", "checked": copy, "seconds": round(time.time() - t, 1),
                 "error_count": errs.Count, "by_class": by_class, "unrouted_connections": d.UnrouteCount,
                 "errors": rows, "truncated": errs.Count > len(rows)}
-
-    # ------------------------------------------------------------------ autoroute
-    def autoroute(self, path: str, out_path: str, nets: list[str] | None = None,
-                  passes: list[str] | None = None, intensity: str | None = None,
-                  timeout: float = 900) -> dict:
-        a, d, copy = self._open_copy(path, "route")
-        strat = a.ActiveStrategy
-        saved = []
-        if passes is not None or intensity is not None:
-            want = {PASS_TYPES[p] for p in passes} if passes is not None else None
-            for p in items(strat.Passes):
-                saved.append((p, p.Enabled, p.Intensity))
-                if want is not None:
-                    p.Enabled = p.Type in want
-                if intensity is not None:
-                    p.Intensity = INTENSITY[intensity]
-        before = d.UnrouteCount
-        r = d.Router
-        t = time.time()
-        try:
-            if nets:
-                missing = [n for n in nets if d.Nets.Item(n) is None]
-                if missing:
-                    raise ValueError(f"unknown nets: {missing}")
-                for n in nets:
-                    d.Nets.Item(n).Selected = True
-                r.Route()                                 # routes the selection
-            else:
-                r.Run = True                              # runs the whole strategy
-            while not r.RouteComplete:
-                if time.time() - t > timeout:
-                    r.Run = False
-                    break
-                pythoncom.PumpWaitingMessages()
-                time.sleep(0.5)
-            stats = {"seconds": round(time.time() - t, 1), "unrouted_before": before,
-                     "unrouted_after": d.UnrouteCount, "vias": d.Vias.Count,
-                     "segments": d.RouteSegments.Count, "completed": bool(r.RouteComplete)}
-        finally:
-            for p, en, it in saved:                       # leave the user's strategy as it was
-                p.Enabled, p.Intensity = en, it
-        d.SaveAsNoLock(out_path)
-        return stats

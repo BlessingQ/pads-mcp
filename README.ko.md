@@ -7,8 +7,8 @@ COM 자동화로 다루게 해 주는 MCP 서버입니다.
 
 - **회로도**: 부품 배치, 와이어 연결, 전원/GND 심볼, 넷 라벨.
 - **Agent 배선(PCB)**: AI 에이전트가 패드와 장애물 정보를 보고 층, 꺾이는 점, 비아, 선폭까지 직접 경로를 정합니다.
-  서버는 그 경로를 그대로 설계에 넣고 PADS Router DRC로 검사합니다.
-  PADS 자동 배선기도 있지만, 사용자가 요청할 때만 씁니다.
+  서버는 그 경로를 그대로 설계에 넣습니다. 배선은 모두 PADS Layout에서 하며, 자동 배선기는 쓰지 않습니다.
+  DRC는 선택 사항이며 PADS Router 검사기를 씁니다(PADS Router 라이선스 필요).
 - **규칙과 임피던스**: 넷 클래스, 선폭/간격/고속 규칙, 적층 구조, 목표 임피던스에 맞는 선폭 계산.
 
 ## 동작 방식
@@ -23,7 +23,7 @@ AI 클라이언트 ⇄ pads-mcp (Python, stdio) ⇄ COM ⇄ PADS Logic / PADS La
 | 라이브러리 부품 배치, 이동, 회전, 속성 | COM API |
 | **회로도 와이어, 전원/GND 심볼, 넷 라벨, 부품 복사** | COM API 없음 → **ASCII 라운드트립** (내보내기 → 편집 → 빈 문서로 가져오기 → 저장) |
 | **PCB 트레이스·비아, 넷 클래스, 규칙, 적층** | COM API 없음 → PADS Layout에서도 같은 **ASCII 라운드트립** |
-| PCB DRC, (선택) 자동 배선 | PADS Router COM (`BlazeRouter.Application`), 저장된 PCB의 복사본에서 실행 |
+| PCB DRC (선택, PADS Router 라이선스 필요) | PADS Router COM (`BlazeRouter.Application`), 저장된 PCB의 복사본에서 실행 |
 | 시각 확인 | 창 캡처 (`pads_screenshot`) |
 
 ## Agent 배선 흐름 (PCB)
@@ -43,8 +43,9 @@ AI 클라이언트 ⇄ pads-mcp (Python, stdio) ⇄ COM ⇄ PADS Logic / PADS La
    - 패드 중심 좌표는 자동으로 붙습니다.
    - `[x, y, "bottom"]`은 그 점에 비아를 두고 해당 층으로 넘어간다는 뜻입니다.
    - `width`를 생략하면 넷 클래스의 `REC_TRACK_WIDTH`를 씁니다.
-4. 결과에 **새 배선 주변의 DRC 오류**가 함께 오므로, 모델이 고쳐서 다시 배선합니다.
-5. `pads_screenshot(app="layout", region=[x1, y1, x2, y2])`로 눈으로 확인합니다.
+4. 새 배선을 `layout_region`과 `pads_screenshot(app="layout", region=[x1, y1, x2, y2])`로 확인하고 다음 묶음을 배선합니다.
+5. 배선이 끝나면 `layout_drc`(PADS Router 검사기)를 한 번 실행하고, 새 배선의 오류를 고칩니다.
+   PADS Router 라이선스가 없으면 PADS Layout의 Tools > Verify Design으로 검사합니다.
 
 PCB를 한 번 편집할 때마다 설계 전체를 다시 가져옵니다. 부품 160개 보드 기준으로 30~60초가 걸리니 배선을 묶어서 보내세요.
 
@@ -56,7 +57,7 @@ PCB를 한 번 편집할 때마다 설계 전체를 다시 가져옵니다. 부�
   - 편집 전에 파일을 `work\history\`에 백업합니다.
   - PADS가 거부하거나 내용이 바뀌면(부품·넷 수가 달라지는 경우 등) 아무것도 저장하지 않고 원래 파일을 다시 엽니다.
   - `logic_undo` / `layout_undo`로 마지막 백업을 복원합니다.
-- DRC와 자동 배선은 잠금 없이 연 **복사본**에서만 실행되므로 원본 파일을 직접 건드리지 않습니다.
+- DRC는 잠금 없이 연 **복사본**에서만 실행되므로 원본 파일을 직접 건드리지 않습니다.
 - ASCII 가져오기 중 뜨는 `Font Replacement` 대화상자는 자동으로 응답합니다. 다른 대화상자는 `pads_dialogs` / `pads_click_dialog`로 처리합니다.
 - PADS는 한 번에 하나의 AI 클라이언트만 조작해야 합니다. COM이 실행 중인 PADS 하나에 붙기 때문입니다.
 
@@ -73,7 +74,7 @@ PCB를 한 번 편집할 때마다 설계 전체를 다시 가져옵니다. 부�
 **PADS Layout (PCB, mm 단위)**
 - 파일: `layout_status`, `layout_open`, `layout_save`, `layout_export` (ascii/netlist/rules), `layout_undo`
 - 조회: `layout_overview`, `layout_list_components`, `layout_get_component`, `layout_list_nets`, `layout_get_net`, `layout_region`
-- **배선**: `layout_route`, `layout_unroute`, `layout_drc`, `layout_autoroute` (요청 시에만)
+- **배선**: `layout_route`, `layout_unroute`, `layout_drc` (PADS Router 검사기, 선택)
 - 규칙: `layout_get_rules`, `layout_set_rules`, `layout_stackup`, `layout_set_stackup`, `layout_impedance`
 - 배치: `layout_move_component`, `layout_select`
 
@@ -127,7 +128,7 @@ PCB를 한 번 편집할 때마다 설계 전체를 다시 가져옵니다. 부�
    ```powershell
    uvx --from git+https://github.com/BlessingQ/pads-mcp@latest pads-mcp --check
    ```
-   PADS Logic / Layout / Router가 모두 `OK`로 나오고 마지막에 `ready`가 나오면 됩니다.
+   PADS Logic / Layout이 `OK`로 나오고 마지막에 `ready`가 나오면 됩니다. PADS Router는 `layout_drc`에만 필요합니다.
 
 `uvx`는 Python과 의존성을 담은 격리 환경을 uv 캐시(`%LOCALAPPDATA%\uv\cache`)에 만들고 그 안에서 서버를 실행합니다.
 따로 설치되는 것이 없고 venv나 pip 작업도 필요 없습니다. `uv cache clean`으로 지우면 다음 실행 때 다시 만들어집니다.
@@ -266,6 +267,7 @@ claude mcp add --scope user pads -- "$PWD\.venv\Scripts\python.exe" -m pads_mcp.
   - `AUTO_ROUTE` 줄이 없으면 N입니다.
 - PADS Layout COM으로는 트레이스나 비아를 만들 수 없습니다.
 - PADS Router COM은 배선(`Router.Run`, 선택 대상 `Route()`, `LCTune`)과 검사(`Checker`)는 되지만, 규칙은 설정할 수 없습니다.
+  pads-mcp는 PADS Router로 배선하지 않습니다. PADS Router는 `layout_drc`에서만 실행되며, PADS Router 라이선스(`blzshell`)가 필요합니다.
 
 ## 알려진 한계
 

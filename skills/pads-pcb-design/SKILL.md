@@ -1,6 +1,6 @@
 ---
 name: pads-pcb-design
-description: PCB placement and routing rules and pitfalls for PADS Layout/Router. Use when placing parts on a PCB, routing, setting net classes, track widths, clearances, impedance or length-matching rules, reviewing a layout or DRC result, or working on a PCB with the pads MCP's layout_* tools.
+description: PCB placement and routing rules and pitfalls for PADS Layout. Use when placing parts on a PCB, routing, setting net classes, track widths, clearances, impedance or length-matching rules, reviewing a layout or DRC result, or working on a PCB with the pads MCP's layout_* tools.
 ---
 
 # PADS PCB design rules
@@ -12,7 +12,9 @@ Add company- or product-specific rules to the last section of this file. It is e
 
 - Confirm with the user which `.pcb` may be edited (a copy is safest). Every pads MCP edit is backed up to
   `work\history` and can be reverted with `layout_undo`.
-- Order: **rules → placement → user confirms placement → power and critical nets → automatic routing of the rest → DRC → user confirms**.
+- Order: **rules → placement → user confirms placement → power and critical nets → the rest → DRC → user confirms**.
+- All routing is done in PADS Layout with `layout_route`: you plan every trace yourself. There is no autorouter,
+  so "route it automatically" also means planning the paths and drawing them in batches.
 - Set rules (width, clearance, net classes, impedance, length) **before routing**. If you change rules after routing, you must reroute.
 - After each step, check with `pads_screenshot(app='layout')` and report the results to the user as numbers (unrouted count, DRC error count).
 - Never decide a value you cannot know (fab capability, isolation rating, mechanical constraints) on your own. Ask the user, or check the company rules section below.
@@ -56,7 +58,7 @@ Add company- or product-specific rules to the last section of this file. It is e
 ## How to route with the pads MCP (agent routing)
 
 1. Start with `layout_overview`: board outline, layers, via types, rules, unrouted connections per net.
-   - If rules are missing or wrong, fix them first with `layout_set_rules`: class widths, clearance, and auto_route only if the user wants it.
+   - If rules are missing or wrong, fix them first with `layout_set_rules`: class widths and clearance.
    - If the stack-up is the PADS default (0.254 mm dielectric), ask the user for the real one before computing impedance.
 2. For each area, call `layout_region(x1, y1, x2, y2)`. It returns:
    - pads: centre, `layer` (an SMD pad exists only on that layer; null = through-hole on all layers), and half extents `hx`/`hy`
@@ -70,9 +72,13 @@ Add company- or product-specific rules to the last section of this file. It is e
 5. On one layer, two nets cannot cross. Plan the order: the first route can block the second.
    - Use the other layer or go around the end of a connector row.
 6. Send **many connections per `layout_route` call**. Each call re-imports the whole design (~30-60 s).
-7. Read `drc.errors_near_new_routes`, fix the offending routes (re-routing a pin pair replaces it), and repeat.
-   Errors elsewhere (`other_errors_by_class`) usually come from placement. Report them, but don't "fix" them silently.
-8. Check visually with `pads_screenshot(app="layout", region=[...])`, then report to the user as numbers: routed / unrouted connections, vias, DRC errors.
+7. After each batch, check the new copper with `layout_region` and the remaining work with `layout_overview`.
+8. DRC needs PADS Router (and its license), so run `layout_drc` **once at the end**, not after every batch.
+   - Fix the errors on your new routes (re-routing a pin pair replaces it), then run `layout_drc` again.
+   - Errors elsewhere usually come from placement. Report them, but don't "fix" them silently.
+   - If `layout_drc` fails (e.g. no PADS Router license), say so and ask the user to run
+     Tools > Verify Design in PADS Layout.
+9. Check visually with `pads_screenshot(app="layout", region=[...])`, then report to the user as numbers: routed / unrouted connections, vias, DRC errors.
 
 Suggested order on a board like this:
 - power entry and regulators (wide)
@@ -93,11 +99,10 @@ Suggested order on a board like this:
 - **PADS Layout COM cannot create traces or vias** (no such API).
   - `layout_route` therefore writes the `*ROUTE*` section of the ASCII and re-imports the design.
   - The connections of a net must be kept in tree order. The tool handles this.
-- **PADS Router COM** (`BlazeRouter.Application`):
-  - `Checker`: DRC (`layout_drc`).
-  - Autorouting (`layout_autoroute`): use it only when the user asks for it.
+- **PADS Router COM** (`BlazeRouter.Application`) is used only for DRC (`layout_drc`, its `Checker`).
+  - It needs a PADS Router license. Routing never uses it.
   - It **cannot set rules**: put the rules into the Layout design first.
-- Handle power/GND planes with Pour/Plane areas and usually exclude them from automatic routing.
+- Handle power/GND planes with Pour/Plane areas. Leave those connections unrouted for the pour unless the user wants traces.
 
 ## Company and product rules (to be filled in)
 

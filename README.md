@@ -7,8 +7,8 @@ An MCP server that lets an AI assistant (Claude Code, Codex, GitHub Copilot) dri
 
 - **Schematics**: place parts, draw wires, attach power/GND symbols and net labels.
 - **Agent PCB routing**: the AI agent plans each trace (layer, corners, vias, width) from pad and obstacle data;
-  the server writes it into the design exactly as planned and checks it with the PADS Router DRC.
-  The PADS autorouter is available too, but only when you ask for it.
+  the server writes it into the design exactly as planned. All routing happens in PADS Layout; there is no autorouter.
+  An optional DRC uses the PADS Router checker (needs a PADS Router license).
 - **Rules and impedance**: net classes, width/clearance/high-speed rules, layer stack-up, and trace width for a
   target impedance.
 
@@ -24,7 +24,7 @@ AI client ⇄ pads-mcp (Python, stdio) ⇄ COM ⇄ PADS Logic / PADS Layout / PA
 | Placing library parts, moving, rotating, attributes | COM API |
 | **Schematic wires, power/GND symbols, net labels, copying parts** | No COM API → **ASCII round trip** (export → edit → import into a blank design → save) |
 | **PCB traces and vias, net classes, rules, stack-up** | No COM API → the same **ASCII round trip** for PADS Layout |
-| PCB design-rule check, optional autorouting | PADS Router COM (`BlazeRouter.Application`) on a copy of the saved PCB |
+| PCB design-rule check (optional, needs a PADS Router license) | PADS Router COM (`BlazeRouter.Application`) on a copy of the saved PCB |
 | Visual check | Window capture (`pads_screenshot`) |
 
 ## Agent routing workflow (PCB)
@@ -44,8 +44,9 @@ AI client ⇄ pads-mcp (Python, stdio) ⇄ COM ⇄ PADS Logic / PADS Layout / PA
    - The pad centres are added automatically.
    - `[x, y, "bottom"]` places a via there and continues on that layer.
    - `width` defaults to the net class `REC_TRACK_WIDTH`.
-4. The result includes the DRC errors **near the new traces**, so the model can fix them and route again.
-5. Check visually with `pads_screenshot(app="layout", region=[x1, y1, x2, y2])`.
+4. Check the new copper with `layout_region` and visually with `pads_screenshot(app="layout", region=[x1, y1, x2, y2])`, then route the next batch.
+5. When routing is done, run `layout_drc` once (PADS Router checker) and fix the errors on the new traces.
+   Without a PADS Router license, use Tools > Verify Design in PADS Layout instead.
 
 Each PCB edit re-imports the whole design. That takes about 30–60 s on a 160-part board, so batch your routes.
 
@@ -57,7 +58,7 @@ Each PCB edit re-imports the whole design. That takes about 30–60 s on a 160-p
   - The file is backed up to `work\history\` first.
   - If PADS rejects or changes anything (for example, the part or net count changes), nothing is saved and the original is reopened.
   - `logic_undo` / `layout_undo` restore the last backup.
-- DRC and autorouting run on a **copy** opened without a file lock, so they never touch your file directly.
+- DRC runs on a **copy** opened without a file lock, so it never touches your file directly.
 - The `Font Replacement` dialog during ASCII import is answered automatically. Other dialogs can be handled with
   `pads_dialogs` / `pads_click_dialog`.
 - Only one AI client should drive PADS at a time (COM attaches to the running PADS instance).
@@ -75,7 +76,7 @@ Each PCB edit re-imports the whole design. That takes about 30–60 s on a 160-p
 **PADS Layout (PCB, mm)**
 - Files: `layout_status`, `layout_open`, `layout_save`, `layout_export` (ascii/netlist/rules), `layout_undo`
 - Queries: `layout_overview`, `layout_list_components`, `layout_get_component`, `layout_list_nets`, `layout_get_net`, `layout_region`
-- **Routing**: `layout_route`, `layout_unroute`, `layout_drc`, `layout_autoroute` (only on request)
+- **Routing**: `layout_route`, `layout_unroute`, `layout_drc` (PADS Router checker, optional)
 - Rules: `layout_get_rules`, `layout_set_rules`, `layout_stackup`, `layout_set_stackup`, `layout_impedance`
 - Placement: `layout_move_component`, `layout_select`
 
@@ -129,7 +130,7 @@ Each PCB edit re-imports the whole design. That takes about 30–60 s on a 160-p
    ```powershell
    uvx --from git+https://github.com/BlessingQ/pads-mcp@latest pads-mcp --check
    ```
-   You should see `OK` for PADS Logic / Layout / Router, then `ready`.
+   You should see `OK` for PADS Logic / Layout, then `ready`. PADS Router is needed only for `layout_drc`.
 
 `uvx` runs the server from an isolated environment in the uv cache (`%LOCALAPPDATA%\uv\cache`) that holds Python and all dependencies.
 Nothing is installed, and there is no venv or pip step. `uv cache clean` deletes the environment, and the next start rebuilds it.
@@ -268,6 +269,7 @@ claude mcp add --scope user pads -- "$PWD\.venv\Scripts\python.exe" -m pads_mcp.
   - An absent `AUTO_ROUTE` means N.
 - PADS Layout COM cannot create traces or vias.
 - PADS Router COM can route (`Router.Run`, `Route()` for the selection, `LCTune`) and check (`Checker`), but cannot set rules.
+  pads-mcp never routes with it; only `layout_drc` starts PADS Router, which needs a PADS Router license (`blzshell`).
 
 ## Known limitations
 

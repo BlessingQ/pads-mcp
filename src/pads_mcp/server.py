@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
 
 import win32con
 import win32gui
@@ -53,16 +52,20 @@ Drawing guidance: place parts on the 100 mil grid with >= 600 mil clearance; pre
 local connections between nearby pins.
 
 PCB (PADS Layout) - all PCB coordinates are mm, y up. Layers: 1 = Top, N = Bottom.
+- All routing is done in PADS Layout. There is no autorouter: when the user asks for (automatic)
+  routing, plan every connection yourself and draw it with layout_route, many connections per call.
 - PADS Layout COM cannot draw traces: layout_route writes YOUR planned path into the design
   (ASCII round trip of the whole PCB, atomic, backup in work/history, layout_undo restores).
 - Agent routing loop: layout_overview -> layout_get_net / layout_region (pins, pad layers, existing
   copper) -> plan the path yourself (layer, corners, vias, width from the net-class rules) ->
-  layout_route (batch several connections) -> layout_drc (PADS Router checker) -> fix -> screenshot.
+  layout_route (batch several connections) -> layout_region / pads_screenshot to check -> next batch.
+- layout_drc uses the PADS Router checker and needs a PADS Router license. Do not run it after every
+  batch: run it once at the end or when the user asks. If it fails (e.g. no license), report that and
+  suggest Tools > Verify Design in PADS Layout instead.
 - SMD pads exist only on their side's layer: a route must leave/enter them on that layer; change
   layers with a via (a path point [x, y, new_layer]). Through-hole pads (layer null) work on any layer.
 - Keep 45/90 degree geometry, respect track width / clearance rules, keep clear of other nets' pads.
 - Rules and impedance: layout_get_rules / layout_set_rules, layout_stackup / layout_impedance.
-- layout_autoroute (PADS Router) exists but use it ONLY when the user asks for autorouting.
 If a call times out, PADS is probably showing a modal dialog: use pads_dialogs / pads_click_dialog.
 """
 
@@ -367,7 +370,7 @@ async def layout_region(x1: float, y1: float, x2: float, y2: float) -> dict:
 
 
 @mcp.tool()
-async def layout_route(routes: list[dict], drc: bool = True) -> dict:
+async def layout_route(routes: list[dict], drc: bool = False) -> dict:
     """Draw traces exactly as you planned them (one atomic edit for the whole batch).
 
     Each route: {"from": "U2.26", "to": "R2.1", "layer": "top"|"bottom"|1..N,
@@ -378,14 +381,18 @@ async def layout_route(routes: list[dict], drc: bool = True) -> dict:
     - Start on the from-pad's layer and arrive on the to-pad's layer if they are SMD.
     - width defaults to the net class REC_TRACK_WIDTH. Re-routing a pin pair replaces its old route;
       other connections of the net are kept, ratsnest is rebuilt as needed.
-    With drc=True the PADS Router checker runs afterwards and its errors are returned."""
+    Routing uses PADS Layout only. drc=True additionally runs the PADS Router checker (needs a PADS
+    Router license) and returns the errors near the new routes; if it cannot run, the routes are still
+    saved and drc.error says why."""
     res = await run(layout.route, routes, timeout=600)
+    polylines = [r.pop("points", None) or [] for r in res["routes"]]
     if drc:
-        full = await run(router.drc, res["saved"], 1000, timeout=600)
-        res["drc"] = _focus_drc(full, [r.pop("points") for r in res["routes"]])
-    else:
-        for r in res["routes"]:
-            r.pop("points", None)
+        try:
+            full = await run(router.drc, res["saved"], 1000, timeout=600)
+            res["drc"] = _focus_drc(full, polylines)
+        except Exception as e:  # noqa: BLE001 - the routes are already saved; DRC is optional
+            res["drc"] = {"error": f"PADS Router DRC did not run: {e}",
+                          "note": "The routes above are saved. Check in PADS Layout: Tools > Verify Design."}
     return res
 
 
@@ -418,7 +425,8 @@ async def layout_unroute(nets: list[str] | None = None, pairs: list[list[str]] |
 @mcp.tool()
 async def layout_drc(max_errors: int = 80) -> dict:
     """Design-rule check of the saved PCB with the PADS Router checker (clearance, width,
-    connectivity, length...). Returns error positions (mm) and objects. Saves the PCB first."""
+    connectivity, length...). Returns error positions (mm) and objects. Saves the PCB first.
+    Needs a PADS Router license; run it once after routing, not after every batch."""
     d_path = (await run(layout._begin))[1]
     return await run(router.drc, d_path, max_errors, timeout=600)
 
@@ -475,25 +483,6 @@ async def layout_impedance(layer: int = 1, target_ohm: float | None = None, widt
     if target_ohm is None and width_mm is None:
         raise ValueError("give target_ohm or width_mm")
     return impedance.evaluate(geo, width_mm, target_ohm, diff_gap_mm)
-
-
-@mcp.tool()
-async def layout_autoroute(nets: list[str] | None = None, passes: list[str] | None = None,
-                           intensity: str | None = None, timeout_s: int = 900) -> dict:
-    """PADS Router AUTOROUTER - use only when the user explicitly asks for autorouting.
-    nets: route only these (default: everything the rules allow). passes: fanout, patterns, route,
-    optimize, center, test_points, tune, miters. intensity: low|medium|high. Result replaces the PCB (backed up)."""
-    def job():
-        d, path = layout._begin()
-        backup = layout._backup(path)
-        out = os.path.join(layout.tmpdir, "autorouted.pcb")
-        stats = router.autoroute(path, out, nets, passes, intensity, timeout_s)
-        a = layout.app()
-        a.OpenDocument("")
-        shutil.copy2(out, path)
-        a.OpenDocument(path)
-        return {**stats, "backup": backup, **layout.status()}
-    return await run(job, timeout=timeout_s + 120)
 
 
 @mcp.tool()
