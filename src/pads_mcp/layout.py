@@ -443,8 +443,7 @@ class PadsLayout:
                                      [[p[0] * f, p[1] * f] + p[2:] for p in path], via)
                 by_net.setdefault(net, []).append(conn)
                 report.append({"from": r["from"], "to": r["to"], "net": net, "layer": layer, "width_mm": width,
-                               "vias": sum(1 for p in conn.pts if p.via), "length_mm": round(_length(conn) / f, 3),
-                               "points": [[a["x"], a["y"]]] + [p[:2] for p in path] + [[b["x"], b["y"]]]})
+                               "vias": sum(1 for p in conn.pts if p.via), "length_mm": round(_length(conn) / f, 3)})
             for net, new in by_net.items():
                 pins_all = {k: (x * f, y * f) for k, (x, y) in self._net_pins(d, net).items()}
                 R.replace(net, _merge(R.connections(net), new, pins_all=pins_all,

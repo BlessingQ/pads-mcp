@@ -13,7 +13,6 @@ from .comworker import ComWorker, DialogWatcher, click_button, com_error_text, m
 from . import impedance
 from .layout import PadsLayout
 from .logic import PadsLogic
-from .router import PadsRouter
 
 # NOTE: stay DPI-unaware. PADS 9.x is DPI-unaware, so PrintWindow renders it at its logical
 # size; a DPI-aware caller would get physical window rects and a partly black capture.
@@ -59,9 +58,9 @@ PCB (PADS Layout) - all PCB coordinates are mm, y up. Layers: 1 = Top, N = Botto
 - Agent routing loop: layout_overview -> layout_get_net / layout_region (pins, pad layers, existing
   copper) -> plan the path yourself (layer, corners, vias, width from the net-class rules) ->
   layout_route (batch several connections) -> layout_region / pads_screenshot to check -> next batch.
-- layout_drc uses the PADS Router checker and needs a PADS Router license. Do not run it after every
-  batch: run it once at the end or when the user asks. If it fails (e.g. no license), report that and
-  suggest Tools > Verify Design in PADS Layout instead.
+- pads-mcp never starts PADS Router and has no design-rule check. Keep clearances by planning
+  (pad half-extent + track width / 2 + clearance), and when routing is done ask the user to run
+  Tools > Verify Design in PADS Layout and share the errors.
 - SMD pads exist only on their side's layer: a route must leave/enter them on that layer; change
   layers with a via (a path point [x, y, new_layer]). Through-hole pads (layer null) work on any layer.
 - Keep 45/90 degree geometry, respect track width / clearance rules, keep clear of other nets' pads.
@@ -74,7 +73,6 @@ worker = ComWorker()
 watcher = DialogWatcher()
 logic = PadsLogic(WORKDIR)
 layout = PadsLayout(WORKDIR)
-router = PadsRouter(WORKDIR)
 
 
 async def run(fn, *args, timeout: float = 120, **kw):
@@ -370,7 +368,7 @@ async def layout_region(x1: float, y1: float, x2: float, y2: float) -> dict:
 
 
 @mcp.tool()
-async def layout_route(routes: list[dict], drc: bool = False) -> dict:
+async def layout_route(routes: list[dict]) -> dict:
     """Draw traces exactly as you planned them (one atomic edit for the whole batch).
 
     Each route: {"from": "U2.26", "to": "R2.1", "layer": "top"|"bottom"|1..N,
@@ -381,54 +379,15 @@ async def layout_route(routes: list[dict], drc: bool = False) -> dict:
     - Start on the from-pad's layer and arrive on the to-pad's layer if they are SMD.
     - width defaults to the net class REC_TRACK_WIDTH. Re-routing a pin pair replaces its old route;
       other connections of the net are kept, ratsnest is rebuilt as needed.
-    Routing uses PADS Layout only. drc=True additionally runs the PADS Router checker (needs a PADS
-    Router license) and returns the errors near the new routes; if it cannot run, the routes are still
-    saved and drc.error says why."""
-    res = await run(layout.route, routes, timeout=600)
-    polylines = [r.pop("points", None) or [] for r in res["routes"]]
-    if drc:
-        try:
-            full = await run(router.drc, res["saved"], 1000, timeout=600)
-            res["drc"] = _focus_drc(full, polylines)
-        except Exception as e:  # noqa: BLE001 - the routes are already saved; DRC is optional
-            res["drc"] = {"error": f"PADS Router DRC did not run: {e}",
-                          "note": "The routes above are saved. Check in PADS Layout: Tools > Verify Design."}
-    return res
-
-
-def _focus_drc(full: dict, polylines: list[list[list[float]]], radius: float = 1.0) -> dict:
-    """Split DRC errors into those within `radius` mm of the new routes and the rest (summary only)."""
-    def dist(px, py, a, b):
-        (ax, ay), (bx, by) = a, b
-        dx, dy = bx - ax, by - ay
-        L2 = dx * dx + dy * dy
-        t = 0 if L2 == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / L2))
-        return ((ax + t * dx - px) ** 2 + (ay + t * dy - py) ** 2) ** 0.5
-
-    near, other = [], {}
-    for e in full["errors"]:
-        d = min((dist(e["x"], e["y"], a, b) for pl in polylines for a, b in zip(pl, pl[1:])), default=1e9)
-        if d <= radius:
-            near.append(e)
-        else:
-            other[e["class"]] = other.get(e["class"], 0) + 1
-    return {"errors_near_new_routes": near, "other_errors_by_class": other,
-            "total_errors": full["error_count"], "unrouted_connections": full["unrouted_connections"]}
+    Uses PADS Layout only; there is no design-rule check here. Check the new copper with
+    layout_region, and let the user run Tools > Verify Design in PADS Layout at the end."""
+    return await run(layout.route, routes, timeout=600)
 
 
 @mcp.tool()
 async def layout_unroute(nets: list[str] | None = None, pairs: list[list[str]] | None = None) -> dict:
     """Remove routed copper: whole `nets` and/or specific connections `pairs` [[from, to], ...]."""
     return await run(layout.unroute, nets, pairs, timeout=600)
-
-
-@mcp.tool()
-async def layout_drc(max_errors: int = 80) -> dict:
-    """Design-rule check of the saved PCB with the PADS Router checker (clearance, width,
-    connectivity, length...). Returns error positions (mm) and objects. Saves the PCB first.
-    Needs a PADS Router license; run it once after routing, not after every batch."""
-    d_path = (await run(layout._begin))[1]
-    return await run(router.drc, d_path, max_errors, timeout=600)
 
 
 @mcp.tool()
@@ -509,8 +468,7 @@ async def layout_export(kind: str, path: str) -> dict:
     return await run(layout.export, kind, path)
 
 
-PROGIDS = {"PADS Logic": "PowerLogic.Application", "PADS Layout": "PowerPCB.Application",
-           "PADS Router": "BlazeRouter.Application"}
+PROGIDS = {"PADS Logic": "PowerLogic.Application", "PADS Layout": "PowerPCB.Application"}
 
 
 def _com_server(progid: str) -> str | None:

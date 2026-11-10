@@ -12,11 +12,13 @@ Add company- or product-specific rules to the last section of this file. It is e
 
 - Confirm with the user which `.pcb` may be edited (a copy is safest). Every pads MCP edit is backed up to
   `work\history` and can be reverted with `layout_undo`.
-- Order: **rules → placement → user confirms placement → power and critical nets → the rest → DRC → user confirms**.
+- Order: **rules → placement → user confirms placement → power and critical nets → the rest → user runs Verify Design → fix → user confirms**.
 - All routing is done in PADS Layout with `layout_route`: you plan every trace yourself. There is no autorouter,
   so "route it automatically" also means planning the paths and drawing them in batches.
+- The pads MCP never starts PADS Router and has no DRC tool. Keep clearances by planning; the final check is
+  Tools > Verify Design in PADS Layout, run by the user.
 - Set rules (width, clearance, net classes, impedance, length) **before routing**. If you change rules after routing, you must reroute.
-- After each step, check with `pads_screenshot(app='layout')` and report the results to the user as numbers (unrouted count, DRC error count).
+- After each step, check with `pads_screenshot(app='layout')` and report the results to the user as numbers (routed / unrouted connections, vias).
 - Never decide a value you cannot know (fab capability, isolation rating, mechanical constraints) on your own. Ask the user, or check the company rules section below.
 
 ## Placement
@@ -72,13 +74,13 @@ Add company- or product-specific rules to the last section of this file. It is e
 5. On one layer, two nets cannot cross. Plan the order: the first route can block the second.
    - Use the other layer or go around the end of a connector row.
 6. Send **many connections per `layout_route` call**. Each call re-imports the whole design (~30-60 s).
-7. After each batch, check the new copper with `layout_region` and the remaining work with `layout_overview`.
-8. DRC needs PADS Router (and its license), so run `layout_drc` **once at the end**, not after every batch.
-   - Fix the errors on your new routes (re-routing a pin pair replaces it), then run `layout_drc` again.
+7. After each batch, check the new copper with `layout_region` (recheck the clearance arithmetic against the
+   neighbouring pads, tracks and vias) and the remaining work with `layout_overview`.
+8. Check visually with `pads_screenshot(app="layout", region=[...])`, then report to the user as numbers: routed / unrouted connections, vias.
+9. There is no DRC tool. When routing is done, ask the user to run **Tools > Verify Design** in PADS Layout
+   and share the error list (position, layer, objects).
+   - Fix the errors on your new routes (re-routing a pin pair replaces it), then ask for Verify Design again.
    - Errors elsewhere usually come from placement. Report them, but don't "fix" them silently.
-   - If `layout_drc` fails (e.g. no PADS Router license), say so and ask the user to run
-     Tools > Verify Design in PADS Layout.
-9. Check visually with `pads_screenshot(app="layout", region=[...])`, then report to the user as numbers: routed / unrouted connections, vias, DRC errors.
 
 Suggested order on a board like this:
 - power entry and regulators (wide)
@@ -99,9 +101,8 @@ Suggested order on a board like this:
 - **PADS Layout COM cannot create traces or vias** (no such API).
   - `layout_route` therefore writes the `*ROUTE*` section of the ASCII and re-imports the design.
   - The connections of a net must be kept in tree order. The tool handles this.
-- **PADS Router COM** (`BlazeRouter.Application`) is used only for DRC (`layout_drc`, its `Checker`).
-  - It needs a PADS Router license. Routing never uses it.
-  - It **cannot set rules**: put the rules into the Layout design first.
+- **PADS Router is not used** by the pads MCP (no routing, no DRC), so no PADS Router license is needed.
+- PADS Layout COM has no Verify Design method, so the design-rule check stays a manual step in PADS Layout.
 - Handle power/GND planes with Pour/Plane areas. Leave those connections unrouted for the pour unless the user wants traces.
 
 ## Company and product rules (to be filled in)

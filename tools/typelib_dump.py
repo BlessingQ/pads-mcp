@@ -1,7 +1,7 @@
 """Dump the methods/properties of a COM server's type library WITHOUT starting it.
 
 usage: python typelib_dump.py <ProgID> [name-filter-regex]
-e.g.   python typelib_dump.py BlazeRouter.Application
+e.g.   python typelib_dump.py PowerPCB.Application
        python typelib_dump.py PowerPCB.Application "Route|Trace|Via|Rule"
 """
 import re, sys, winreg

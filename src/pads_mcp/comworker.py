@@ -21,7 +21,7 @@ import win32con
 import win32gui
 import win32process
 
-PADS_EXES = {"powerlogic.exe": "logic", "powerpcb.exe": "layout", "blazerouter.exe": "router"}
+PADS_EXES = {"powerlogic.exe": "logic", "powerpcb.exe": "layout"}
 
 # dialog title -> button caption to click automatically
 AUTO_ANSWERS = {
@@ -103,7 +103,7 @@ def pads_windows():
 
 
 def main_window(app: str) -> int | None:
-    title_key = {"logic": "PADS Logic", "layout": "PADS Layout", "router": "PADS Router"}[app]
+    title_key = {"logic": "PADS Logic", "layout": "PADS Layout"}[app]
     for h, a, title, cls in pads_windows():
         if a == app and cls != "#32770" and title_key in title:
             return h
