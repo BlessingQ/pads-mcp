@@ -192,10 +192,19 @@ class PcbAscii:
     def _rules(self) -> Node:
         return self._block("rules", r"^RULES_SECTION\b").node
 
-    def _class_data(self) -> Node:
-        n = self._rules().child("NET_CLASS DATA")
-        if n is None or n.kids is None:
-            raise AsciiError("RULES_SECTION has no NET_CLASS DATA block")
+    def _class_data(self, create: bool = False) -> Node | None:
+        """The NET_CLASS DATA block. A design without net classes has only a bare
+        'NET_CLASS DATA' line (no braces); create=True turns it into a block (or adds one)."""
+        rules = self._rules()
+        n = rules.child("NET_CLASS DATA")
+        if n is not None and n.kids is not None:
+            return n
+        if not create:
+            return None
+        if n is None:
+            n = Node("NET_CLASS DATA")
+            rules.kids.insert(0, n)
+        n.kids = []
         return n
 
     def _design_rules(self) -> Node:
@@ -205,8 +214,11 @@ class PcbAscii:
         return n
 
     def net_classes(self) -> dict[str, list[str]]:
+        data = self._class_data()
+        if data is None:
+            return {}
         out = {}
-        for k in self._class_data().kids:
+        for k in data.kids:
             if k.key == "NET_CLASS" and k.kids is not None:
                 out[k.value] = [n.value for n in k.leaves("NET")]
         return out
@@ -277,11 +289,13 @@ class PcbAscii:
         missing = [n for n in nets or [] if n not in known]
         if missing:
             raise AsciiError(f"unknown nets: {missing}")
-        data = self._class_data()
-        node = data.child(f"NET_CLASS {name}")
+        data = self._class_data(create=nets is not None)
+        node = data.child(f"NET_CLASS {name}") if data is not None else None
         if nets is None:
             if node is not None:
                 data.kids.remove(node)
+                if not data.kids:
+                    data.kids = None          # back to PADS' bare 'NET_CLASS DATA' line
         else:
             if node is None:
                 node = Node(f"NET_CLASS {name}", [])
