@@ -8,7 +8,7 @@ An MCP server that lets an AI assistant (Claude Code, Codex, GitHub Copilot) dri
 - **Schematics**: place parts, draw wires, attach power/GND symbols and net labels.
 - **Agent PCB routing**: the AI agent plans each trace (layer, corners, vias, width) from pad and obstacle data;
   the server writes it into the design exactly as planned. All routing happens in PADS Layout; there is no autorouter.
-  PADS Router is never started, so no PADS Router license is needed.
+  Every routing call is followed by pads-mcp's own clearance check of the new traces (no PADS Router, no license).
 - **Rules and impedance**: net classes, width/clearance/high-speed rules, layer stack-up, and trace width for a
   target impedance.
 
@@ -24,6 +24,7 @@ AI client ⇄ pads-mcp (Python, stdio) ⇄ COM ⇄ PADS Logic / PADS Layout
 | Placing library parts, moving, rotating, attributes | COM API |
 | **Schematic wires, power/GND symbols, net labels, copying parts** | No COM API → **ASCII round trip** (export → edit → import into a blank design → save) |
 | **PCB traces and vias, net classes, rules, stack-up** | No COM API → the same **ASCII round trip** for PADS Layout |
+| Clearance / width check of routed copper | pads-mcp's own geometry check on the exported ASCII (`layout_check`, also inside `layout_route`) |
 | Visual check | Window capture (`pads_screenshot`) |
 
 ## Agent routing workflow (PCB)
@@ -43,9 +44,11 @@ AI client ⇄ pads-mcp (Python, stdio) ⇄ COM ⇄ PADS Logic / PADS Layout
    - The pad centres are added automatically.
    - `[x, y, "bottom"]` places a via there and continues on that layer.
    - `width` defaults to the net class `REC_TRACK_WIDTH`.
-4. Check the new copper with `layout_region` and visually with `pads_screenshot(app="layout", region=[x1, y1, x2, y2])`, then route the next batch.
-5. When routing is done, run Tools > Verify Design in PADS Layout and give the errors to the agent to fix.
-   pads-mcp has no design-rule check of its own (PADS Layout COM has no Verify Design method).
+4. The `layout_route` result has a `check` with the clearance / width findings of the new traces (gap, required value,
+   position, the other object). The model re-routes those, checks visually with `pads_screenshot(app="layout", region=[x1, y1, x2, y2])`,
+   then routes the next batch.
+5. When routing is done, run `layout_check` for the whole board, then Tools > Verify Design in PADS Layout as the final
+   check (it also covers pours, planes, text and drill holes).
 
 Each PCB edit re-imports the whole design. That takes about 30–60 s on a 160-part board, so batch your routes.
 
@@ -74,7 +77,7 @@ Each PCB edit re-imports the whole design. That takes about 30–60 s on a 160-p
 **PADS Layout (PCB, mm)**
 - Files: `layout_status`, `layout_open`, `layout_save`, `layout_export` (ascii/netlist/rules), `layout_undo`
 - Queries: `layout_overview`, `layout_list_components`, `layout_get_component`, `layout_list_nets`, `layout_get_net`, `layout_region`
-- **Routing**: `layout_route`, `layout_unroute`
+- **Routing**: `layout_route`, `layout_unroute`, `layout_check` (clearance / width check, no PADS Router)
 - Rules: `layout_get_rules`, `layout_set_rules`, `layout_stackup`, `layout_set_stackup`, `layout_impedance`
 - Placement: `layout_move_component`, `layout_select`
 
@@ -267,13 +270,17 @@ claude mcp add --scope user pads -- "$PWD\.venv\Scripts\python.exe" -m pads_mcp.
   - An absent `AUTO_ROUTE` means N.
 - PADS Layout COM cannot create traces or vias.
 - PADS Layout COM has no Verify Design (DRC) method either. PADS Router COM can route and check, but needs a PADS Router
-  license (`blzshell`), so pads-mcp does not use it at all.
+  license (`blzshell`), so pads-mcp does not use it at all. `layout_check` computes clearances from the ASCII instead:
+  pads from `*PART*` + `*PARTDECAL*` (bottom-side parts: rotate, then mirror x), tracks and vias from `*ROUTE*`,
+  rules from `RULES_SECTION`.
 
 ## Known limitations
 
 - PCB edits take 30–60 s each (whole-design re-import), so batch connections in one `layout_route` call.
 - Routes are point-to-point between pins. T-junctions in the middle of a trace and copper pours are not supported yet.
-- No design-rule check inside pads-mcp: run Tools > Verify Design in PADS Layout after routing.
+- `layout_check` is a simple check: tracks and vias against pads, tracks, vias and the board outline, plus track width.
+  It skips pours / planes / free copper, text, drill holes, same-net and layer-specific rules and pad-to-pad spacing,
+  and counts rounded pad corners as square. Finish with Tools > Verify Design.
 - Impedance uses closed-form formulas (±5–10 %). Confirm with the fab.
 - Schematic: net label text can sit slightly off the symbol, and `logic_move_part` does not reroute attached wires.
 

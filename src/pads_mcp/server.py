@@ -57,10 +57,12 @@ PCB (PADS Layout) - all PCB coordinates are mm, y up. Layers: 1 = Top, N = Botto
   (ASCII round trip of the whole PCB, atomic, backup in work/history, layout_undo restores).
 - Agent routing loop: layout_overview -> layout_get_net / layout_region (pins, pad layers, existing
   copper) -> plan the path yourself (layer, corners, vias, width from the net-class rules) ->
-  layout_route (batch several connections) -> layout_region / pads_screenshot to check -> next batch.
-- pads-mcp never starts PADS Router and has no design-rule check. Keep clearances by planning
-  (pad half-extent + track width / 2 + clearance), and when routing is done ask the user to run
-  Tools > Verify Design in PADS Layout and share the errors.
+  layout_route (batch several connections) -> fix what its `check` reports -> next batch.
+- layout_route checks the new routes itself (clearance to pads / tracks / vias / board outline and
+  track width, against the design rules) and returns the findings in `check`. Fix them by re-routing
+  the pin pair. layout_check runs the same check on all routed copper (or some nets / a region).
+  pads-mcp never starts PADS Router. The check skips pours/planes, text and drill holes, so when routing
+  is done, ask the user to run Tools > Verify Design in PADS Layout as the final check.
 - SMD pads exist only on their side's layer: a route must leave/enter them on that layer; change
   layers with a via (a path point [x, y, new_layer]). Through-hole pads (layer null) work on any layer.
 - Keep 45/90 degree geometry, respect track width / clearance rules, keep clear of other nets' pads.
@@ -379,9 +381,21 @@ async def layout_route(routes: list[dict]) -> dict:
     - Start on the from-pad's layer and arrive on the to-pad's layer if they are SMD.
     - width defaults to the net class REC_TRACK_WIDTH. Re-routing a pin pair replaces its old route;
       other connections of the net are kept, ratsnest is rebuilt as needed.
-    Uses PADS Layout only; there is no design-rule check here. Check the new copper with
-    layout_region, and let the user run Tools > Verify Design in PADS Layout at the end."""
+    Uses PADS Layout only. The result's `check` lists clearance / width problems of the NEW routes
+    (gap and required value in mm, position, the other object); an empty findings list means clean."""
     return await run(layout.route, routes, timeout=600)
+
+
+@mcp.tool()
+async def layout_check(nets: list[str] | None = None, region: list[float] | None = None,
+                       max_report: int = 100) -> dict:
+    """pads-mcp's own clearance check (no PADS Router): routed tracks and vias against pads, other
+    nets' tracks and vias, and the board outline, plus track width, using the design's clearance
+    rules. Scope: all routed copper, only `nets`, or connections touching `region` [x1, y1, x2, y2] mm.
+    Findings: type (e.g. track-smd, via-track, width, track-outline), layer, at [x, y], gap and
+    required (mm), short=true when copper touches. Not checked: pours/planes, text, drill holes,
+    pad-to-pad; finish with Tools > Verify Design in PADS Layout."""
+    return await run(layout.check, nets, region, max_report, timeout=300)
 
 
 @mcp.tool()

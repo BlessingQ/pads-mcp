@@ -8,7 +8,7 @@ COM 자동화로 다루게 해 주는 MCP 서버입니다.
 - **회로도**: 부품 배치, 와이어 연결, 전원/GND 심볼, 넷 라벨.
 - **Agent 배선(PCB)**: AI 에이전트가 패드와 장애물 정보를 보고 층, 꺾이는 점, 비아, 선폭까지 직접 경로를 정합니다.
   서버는 그 경로를 그대로 설계에 넣습니다. 배선은 모두 PADS Layout에서 하며, 자동 배선기는 쓰지 않습니다.
-  PADS Router는 실행하지 않으므로 PADS Router 라이선스가 필요 없습니다.
+  배선할 때마다 pads-mcp가 새 배선의 간격을 직접 검사합니다(PADS Router와 라이선스 불필요).
 - **규칙과 임피던스**: 넷 클래스, 선폭/간격/고속 규칙, 적층 구조, 목표 임피던스에 맞는 선폭 계산.
 
 ## 동작 방식
@@ -23,6 +23,7 @@ AI 클라이언트 ⇄ pads-mcp (Python, stdio) ⇄ COM ⇄ PADS Logic / PADS La
 | 라이브러리 부품 배치, 이동, 회전, 속성 | COM API |
 | **회로도 와이어, 전원/GND 심볼, 넷 라벨, 부품 복사** | COM API 없음 → **ASCII 라운드트립** (내보내기 → 편집 → 빈 문서로 가져오기 → 저장) |
 | **PCB 트레이스·비아, 넷 클래스, 규칙, 적층** | COM API 없음 → PADS Layout에서도 같은 **ASCII 라운드트립** |
+| 배선 간격·선폭 검사 | 내보낸 ASCII로 pads-mcp가 직접 계산 (`layout_check`, `layout_route` 안에서도 실행) |
 | 시각 확인 | 창 캡처 (`pads_screenshot`) |
 
 ## Agent 배선 흐름 (PCB)
@@ -42,9 +43,10 @@ AI 클라이언트 ⇄ pads-mcp (Python, stdio) ⇄ COM ⇄ PADS Logic / PADS La
    - 패드 중심 좌표는 자동으로 붙습니다.
    - `[x, y, "bottom"]`은 그 점에 비아를 두고 해당 층으로 넘어간다는 뜻입니다.
    - `width`를 생략하면 넷 클래스의 `REC_TRACK_WIDTH`를 씁니다.
-4. 새 배선을 `layout_region`과 `pads_screenshot(app="layout", region=[x1, y1, x2, y2])`로 확인하고 다음 묶음을 배선합니다.
-5. 배선이 끝나면 PADS Layout에서 Tools > Verify Design을 실행하고, 나온 오류를 에이전트에게 알려 고치게 합니다.
-   pads-mcp에는 자체 DRC가 없습니다(PADS Layout COM에 Verify Design 기능이 없습니다).
+4. `layout_route` 결과의 `check`에 새 배선의 간격·선폭 문제(실제 간격, 필요 간격, 위치, 상대 객체)가 나옵니다.
+   모델이 그 배선을 다시 그리고 `pads_screenshot(app="layout", region=[x1, y1, x2, y2])`로 확인한 뒤 다음 묶음을 배선합니다.
+5. 배선이 끝나면 `layout_check`로 보드 전체를 검사하고, 마지막으로 PADS Layout의 Tools > Verify Design을 실행합니다
+   (Verify Design은 동박 채우기, 플레인, 글자, 드릴 구멍까지 검사합니다).
 
 PCB를 한 번 편집할 때마다 설계 전체를 다시 가져옵니다. 부품 160개 보드 기준으로 30~60초가 걸리니 배선을 묶어서 보내세요.
 
@@ -72,7 +74,7 @@ PCB를 한 번 편집할 때마다 설계 전체를 다시 가져옵니다. 부�
 **PADS Layout (PCB, mm 단위)**
 - 파일: `layout_status`, `layout_open`, `layout_save`, `layout_export` (ascii/netlist/rules), `layout_undo`
 - 조회: `layout_overview`, `layout_list_components`, `layout_get_component`, `layout_list_nets`, `layout_get_net`, `layout_region`
-- **배선**: `layout_route`, `layout_unroute`
+- **배선**: `layout_route`, `layout_unroute`, `layout_check` (간격·선폭 검사, PADS Router 불필요)
 - 규칙: `layout_get_rules`, `layout_set_rules`, `layout_stackup`, `layout_set_stackup`, `layout_impedance`
 - 배치: `layout_move_component`, `layout_select`
 
@@ -265,13 +267,16 @@ claude mcp add --scope user pads -- "$PWD\.venv\Scripts\python.exe" -m pads_mcp.
   - `AUTO_ROUTE` 줄이 없으면 N입니다.
 - PADS Layout COM으로는 트레이스나 비아를 만들 수 없습니다.
 - PADS Layout COM에는 Verify Design(DRC) 기능도 없습니다. PADS Router COM은 배선과 검사가 되지만 PADS Router 라이선스(`blzshell`)가
-  필요하므로 pads-mcp는 PADS Router를 전혀 쓰지 않습니다.
+  필요하므로 pads-mcp는 PADS Router를 전혀 쓰지 않습니다. 대신 `layout_check`가 ASCII에서 간격을 계산합니다.
+  패드는 `*PART*` + `*PARTDECAL*`(바닥면 부품은 회전한 뒤 x 미러), 트레이스와 비아는 `*ROUTE*`, 규칙은 `RULES_SECTION`에서 읽습니다.
 
 ## 알려진 한계
 
 - PCB 편집은 한 번에 30~60초 걸립니다(설계 전체 재가져오기). 연결을 `layout_route` 한 번에 묶어 보내세요.
 - 배선은 핀과 핀 사이 경로만 지원합니다. 트레이스 중간에서 갈라지는 T 분기와 동박 채우기(pour)는 아직 지원하지 않습니다.
-- pads-mcp 안에는 DRC가 없습니다. 배선 후 PADS Layout에서 Tools > Verify Design을 실행하세요.
+- `layout_check`는 간이 검사입니다. 트레이스·비아와 패드·트레이스·비아·보드 외곽 사이 간격, 선폭만 봅니다.
+  동박 채우기·플레인·자유 동박, 글자, 드릴 구멍, 같은 넷 규칙, 층별 규칙, 패드끼리 간격은 검사하지 않고,
+  패드의 둥근 모서리는 직각으로 계산합니다. 마지막은 Tools > Verify Design으로 확인하세요.
 - 임피던스는 근사식(±5~10 %)으로 계산합니다. 최종 값은 제조사에서 확인하세요.
 - 회로도: 넷 라벨 글자가 심볼에서 조금 떨어져 보일 수 있고, `logic_move_part`는 붙어 있던 와이어를 다시 그리지 않습니다.
 

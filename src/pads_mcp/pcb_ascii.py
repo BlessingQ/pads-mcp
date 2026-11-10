@@ -37,6 +37,7 @@ Only the edited blocks are rewritten; every other line is kept verbatim.
 from __future__ import annotations
 
 import copy
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -163,6 +164,11 @@ class PcbAscii:
     @property
     def header(self) -> str:
         return self.lines[0]
+
+    def file_unit(self) -> str:
+        """Coordinate unit of the file: "!PADS-POWERPCB-V9.3-METRIC! ..." -> METRIC."""
+        head = self.header.split("!")[1] if self.header.startswith("!") else ""
+        return head.rsplit("-", 1)[-1] if "-" in head else "MILS"
 
     def _block(self, name: str, pattern: str) -> _Block:
         if name not in self._blocks:
@@ -411,8 +417,10 @@ class PcbAscii:
                     pt = L[j].split()
                     n = int(pt[1])
                     for k in range(n):
-                        c = L[j + 1 + k].split()
-                        pts.append((x0 + float(c[0]), y0 + float(c[1])))
+                        c = [float(v) for v in L[j + 1 + k].split()]
+                        pts.append((x0 + c[0], y0 + c[1]))
+                        if len(c) >= 8:          # x y begin-angle sweep (0.1 deg) and the circle's bbox
+                            pts += [(x0 + x, y0 + y) for x, y in arc_points(*c[2:8])][1:-1]
                     j += 1 + n
                 xs, ys = [p[0] for p in pts], [p[1] for p in pts]
                 return {"polygon": pts, "bbox": [min(xs), min(ys), max(xs), max(ys)]}
@@ -420,15 +428,100 @@ class PcbAscii:
         return None
 
     def via_types(self) -> dict[str, dict]:
-        """{name: {drill, pad}} from the *VIA* section (file units)."""
+        """{name: {drill, pad, levels}} from the *VIA* section (file units). pad = largest pad;
+        levels = {level: pad size} with -2 top, -1 inner layers, 0 bottom, n = that layer."""
         s, e = self._section("*VIA*")
         out, L = {}, self.lines
         for i in range(s + 1, e):
             t = L[i].split()
             if len(t) == 3 and not L[i].startswith("*") and re.fullmatch(r"[\d.]+", t[1]) and t[2].isdigit():
                 pads = [L[i + 1 + k].split() for k in range(int(t[2]))]
-                size = max((float(p[1]) for p in pads if len(p) > 1), default=0)
-                out[t[0]] = {"drill": float(t[1]), "pad": size}
+                levels = {int(p[0]): float(p[1]) for p in pads if len(p) > 1 and re.fullmatch(r"-?\d+", p[0])}
+                out[t[0]] = {"drill": float(t[1]), "pad": max(levels.values(), default=0), "levels": levels}
+        return out
+
+    # ------------------------------------------------------------------ parts and pads
+    _DECAL = re.compile(r"^(\S+)\s+([A-Z])\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$")
+    _TERM = re.compile(r"^T(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(\S+)")
+    _PART = re.compile(r"^(\S+)\s+(\S+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+[UG]\s+([MN])\s+(\d+)")
+    _PTYPE = re.compile(r"^(\S+)\s+(\S+)\s+\S+\s+\d+\s+\d+\s+\d+\s+\d+\s+[YN]\b")
+
+    def decals(self) -> dict[str, dict]:
+        """{name: {scale, terms: [(pin, x, y)], stacks: {pin or "0": [pad line tokens]}}} from *PARTDECAL*.
+        Decal values are in the decal's own unit (M = mm, I = mil); scale converts them to file units."""
+        s, e = self._section("*PARTDECAL*")
+        per_mm = self._unit_factor(self.file_unit())
+        out, L, cur, i = {}, self.lines, None, s + 1
+        while i < e:
+            line = L[i]
+            m = self._DECAL.match(line)
+            if m:
+                scale = {"M": per_mm, "I": 0.0254 * per_mm}.get(m.group(2), 1.0)
+                cur = out[m.group(1)] = {"scale": scale, "terms": [], "stacks": {}}
+            elif cur is not None:
+                t = self._TERM.match(line)
+                tok = line.split()
+                if t:
+                    cur["terms"].append((t.group(5), float(t.group(1)), float(t.group(2))))
+                elif len(tok) == 3 and tok[0] == "PAD" and tok[1].isdigit() and tok[2].isdigit():
+                    k = int(tok[2])
+                    cur["stacks"][tok[1]] = [L[i + 1 + j].split() for j in range(k)]
+                    i += k
+            i += 1
+        return out
+
+    def parts(self) -> list[dict]:
+        """[{ref, decal, x, y, rotation, bottom}] from *PART* (file units)."""
+        s, e = self._section("*PARTTYPE*")
+        types = {m.group(1): m.group(2).split(":") for l in self.lines[s + 1:e] if (m := self._PTYPE.match(l))}
+        s, e = self._section("*PART*")
+        out = []
+        for line in self.lines[s + 1:e]:
+            m = self._PART.match(line)
+            if not m:
+                continue
+            ptype, alt = m.group(2), int(m.group(7))
+            if "@" in ptype:
+                decal = ptype.split("@", 1)[1]
+            else:
+                names = types.get(ptype, [ptype])
+                decal = names[alt] if alt < len(names) else names[0]
+            out.append({"ref": m.group(1), "decal": decal, "x": float(m.group(3)), "y": float(m.group(4)),
+                        "rotation": float(m.group(5)), "bottom": m.group(6) == "M"})
+        return out
+
+    def pads(self) -> list[dict]:
+        """Copper of every part pin (file units): [{pin, x, y, bottom, smd, levels: {level: shape}}].
+        level: -2 mounted side, -1 inner layers, 0 opposite side, n = that layer.
+        shape: ("cap", ax, ay, bx, by, r) - a segment with a radius (a == b: circle), or
+               ("poly", [(x, y), ...]) - a rectangle (corner rounding/chamfer ignored)."""
+        decals, out = self.decals(), []
+        for p in self.parts():
+            dec = decals.get(p["decal"])
+            if dec is None:
+                continue
+            k = dec["scale"]
+            ca, sa = math.cos(math.radians(p["rotation"])), math.sin(math.radians(p["rotation"]))
+            X, Y, mirror = p["x"], p["y"], p["bottom"]
+
+            def T(x, y):      # decal point -> board point: scale, rotate, mirror (bottom side), move
+                x, y = x * k, y * k
+                x, y = x * ca - y * sa, x * sa + y * ca
+                return (X - x if mirror else X + x), Y + y
+
+            for n, (pin, tx, ty) in enumerate(dec["terms"], 1):
+                stack = dec["stacks"].get(pin) or dec["stacks"].get(str(n)) or dec["stacks"].get("0") or []
+                levels, drill = {}, 0.0
+                for tok in stack:
+                    if not tok or not re.fullmatch(r"-?\d+", tok[0]):
+                        continue
+                    shape, dr = _pad_shape(tok, tx, ty, T, k)
+                    if shape is not None:
+                        levels[int(tok[0])] = shape
+                    drill = max(drill, dr)
+                x, y = T(tx, ty)
+                out.append({"pin": f"{p['ref']}.{pin}", "x": x, "y": y, "bottom": mirror, "smd": drill <= 0,
+                            "levels": levels})
         return out
 
     # ------------------------------------------------------------------ stack-up
@@ -479,6 +572,54 @@ class PcbAscii:
 
 def _bad_unit(unit: str):
     raise AsciiError(f"unsupported unit {unit!r}")
+
+
+def arc_points(begin: float, sweep: float, x1: float, y1: float, x2: float, y2: float,
+               step_deg: float = 10.0) -> list[tuple[float, float]]:
+    """Points along a PADS arc: begin angle and sweep in 0.1 degree, circle bounding box x1 y1 x2 y2.
+    Includes both end points."""
+    cx, cy, r = (x1 + x2) / 2, (y1 + y2) / 2, abs(x2 - x1) / 2
+    a0, da = math.radians(begin / 10), math.radians(sweep / 10)
+    n = max(2, math.ceil(abs(sweep / 10) / step_deg))
+    return [(cx + r * math.cos(a0 + da * i / n), cy + r * math.sin(a0 + da * i / n)) for i in range(n + 1)]
+
+
+def _num(tok: list[str], i: int) -> float:
+    try:
+        return float(tok[i])
+    except (IndexError, ValueError):
+        return 0.0
+
+
+def _pad_shape(tok: list[str], tx: float, ty: float, T, k: float):
+    """One pad stack line -> (shape on the board, drill). Formats (decal units):
+    R: level size R [drill [plated]]           S: level size S corner [drill [plated]]
+    A: level size A inner [drill [plated]]     RF: level size RF ori length offset corner [drill [plated]]
+    OF: level size OF ori length offset [drill [plated]]   RT/ST/RA/SA: plane thermals / anti-pads (skipped)"""
+    size, kind = _num(tok, 1), tok[2] if len(tok) > 2 else "R"
+    drill = {"R": _num(tok, 3), "S": _num(tok, 4), "A": _num(tok, 4), "RF": _num(tok, 7),
+             "OF": _num(tok, 6)}.get(kind, 0.0) * k
+    if size <= 0 or kind in ("RT", "ST", "RA", "SA"):
+        return None, drill
+    if kind in ("RF", "OF"):
+        ang, length, off = math.radians(_num(tok, 3)), _num(tok, 4), _num(tok, 5)
+        ux, uy = math.cos(ang), math.sin(ang)
+        cx, cy = tx + off * ux, ty + off * uy
+        if kind == "RF":
+            hl, hw = length / 2, size / 2
+            return ("poly", [T(cx + sx * hl * ux - sy * hw * uy, cy + sx * hl * uy + sy * hw * ux)
+                             for sx, sy in ((1, 1), (-1, 1), (-1, -1), (1, -1))]), drill
+        if length > size:
+            h = (length - size) / 2
+            ax, ay = T(cx - h * ux, cy - h * uy)
+            bx, by = T(cx + h * ux, cy + h * uy)
+            return ("cap", ax, ay, bx, by, size * k / 2), drill
+        size = max(size, length)
+    if kind == "S":
+        h = size / 2
+        return ("poly", [T(tx + sx * h, ty + sy * h) for sx, sy in ((1, 1), (-1, 1), (-1, -1), (1, -1))]), drill
+    x, y = T(tx, ty)
+    return ("cap", x, y, x, y, size * k / 2), drill
 
 
 # =========================================================================== *ROUTE*

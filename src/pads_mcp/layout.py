@@ -16,6 +16,7 @@ import time
 import pythoncom
 import win32com.client.dynamic
 
+from . import clearance
 from . import pcb_ascii as P
 from .logic import G_natural, getp, items
 
@@ -449,8 +450,34 @@ class PadsLayout:
                 R.replace(net, _merge(R.connections(net), new, pins_all=pins_all,
                                       unrouted_width=new[0].pts[0].width))
             R.commit()
-            return {"routes": report}
+            new_pairs = {(net, frozenset((c.a, c.b))) for net, cs in by_net.items() for c in cs}
+            chk = clearance.check(pcb, nlayers, lambda net, c: (net, frozenset((c.a, c.b))) in new_pairs,
+                                  max_report=40)
+            chk.pop("not_checked", None)
+            return {"routes": report, "check": chk}
         return self._transaction(edit)
+
+    def check(self, nets: list[str] | None = None, region: list[float] | None = None,
+              max_report: int = 100) -> dict:
+        """Clearance / width check of routed copper (all, or of `nets`, or touching `region` mm)."""
+        d = self.doc()
+        pcb = self._export(d)
+        f = pcb._unit_factor(_header_unit(pcb))            # file units per mm
+        want = set(nets) if nets else None
+        if region:
+            x1, y1, x2, y2 = (float(v) * f for v in region)
+            lo_x, hi_x, lo_y, hi_y = min(x1, x2), max(x1, x2), min(y1, y2), max(y1, y2)
+
+        def scope(net, c):
+            if want is not None and net not in want:
+                return False
+            return not region or any(_seg_hits_box(p.x, p.y, q.x, q.y, lo_x, lo_y, hi_x, hi_y)
+                                     for p, q in zip(c.pts, c.pts[1:]))
+        res = clearance.check(pcb, d.ElectricalLayerCount, scope, max_report)
+        if not region:
+            counts = _routed_counts(pcb)
+            res["unrouted_connections"] = sum(r["unrouted"] for n, r in counts.items() if want is None or n in want)
+        return res
 
     def _net_pins(self, d, net: str) -> dict[str, tuple[float, float]]:
         n = d.Nets.Item(net)
@@ -503,9 +530,7 @@ class PadsLayout:
 
 # --------------------------------------------------------------------------- helpers
 def _header_unit(pcb: P.PcbAscii) -> str:
-    # "!PADS-POWERPCB-V9.3-METRIC! ..." -> METRIC
-    head = pcb.header.split("!")[1] if pcb.header.startswith("!") else ""
-    return head.rsplit("-", 1)[-1] if "-" in head else "MILS"
+    return pcb.file_unit()
 
 
 def _layer_no(v, nlayers: int) -> int:

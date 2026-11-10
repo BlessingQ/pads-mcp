@@ -12,13 +12,14 @@ Add company- or product-specific rules to the last section of this file. It is e
 
 - Confirm with the user which `.pcb` may be edited (a copy is safest). Every pads MCP edit is backed up to
   `work\history` and can be reverted with `layout_undo`.
-- Order: **rules → placement → user confirms placement → power and critical nets → the rest → user runs Verify Design → fix → user confirms**.
+- Order: **rules → placement → user confirms placement → power and critical nets → the rest → `layout_check` → user runs Verify Design → fix → user confirms**.
 - All routing is done in PADS Layout with `layout_route`: you plan every trace yourself. There is no autorouter,
   so "route it automatically" also means planning the paths and drawing them in batches.
-- The pads MCP never starts PADS Router and has no DRC tool. Keep clearances by planning; the final check is
-  Tools > Verify Design in PADS Layout, run by the user.
+- The pads MCP never starts PADS Router. `layout_route` checks every new route itself (clearance and width against
+  the design rules) and returns `check`; `layout_check` runs the same check on all routed copper. The final full check
+  is Tools > Verify Design in PADS Layout, run by the user.
 - Set rules (width, clearance, net classes, impedance, length) **before routing**. If you change rules after routing, you must reroute.
-- After each step, check with `pads_screenshot(app='layout')` and report the results to the user as numbers (routed / unrouted connections, vias).
+- After each step, check with `pads_screenshot(app='layout')` and report the results to the user as numbers (routed / unrouted connections, vias, clearance findings).
 - Never decide a value you cannot know (fab capability, isolation rating, mechanical constraints) on your own. Ask the user, or check the company rules section below.
 
 ## Placement
@@ -74,13 +75,16 @@ Add company- or product-specific rules to the last section of this file. It is e
 5. On one layer, two nets cannot cross. Plan the order: the first route can block the second.
    - Use the other layer or go around the end of a connector row.
 6. Send **many connections per `layout_route` call**. Each call re-imports the whole design (~30-60 s).
-7. After each batch, check the new copper with `layout_region` (recheck the clearance arithmetic against the
-   neighbouring pads, tracks and vias) and the remaining work with `layout_overview`.
-8. Check visually with `pads_screenshot(app="layout", region=[...])`, then report to the user as numbers: routed / unrouted connections, vias.
-9. There is no DRC tool. When routing is done, ask the user to run **Tools > Verify Design** in PADS Layout
-   and share the error list (position, layer, objects).
-   - Fix the errors on your new routes (re-routing a pin pair replaces it), then ask for Verify Design again.
-   - Errors elsewhere usually come from placement. Report them, but don't "fix" them silently.
+7. After each batch, read `check` in the `layout_route` result. Each finding has a type (e.g. `track-smd`, `via-track`,
+   `width`, `track-outline`), layer, position `at`, `gap` and `required` (mm); `short: true` means the copper touches.
+   - Fix every finding on your new routes before the next batch: re-routing a pin pair replaces it.
+   - Use `layout_region` around `at` to see the obstacles. Check the remaining work with `layout_overview`.
+8. Check visually with `pads_screenshot(app="layout", region=[...])`, then report to the user as numbers: routed / unrouted connections, vias, clearance findings.
+9. When routing is done, run `layout_check` on the whole board.
+   - Fix the findings on your routes.
+   - Findings elsewhere usually come from placement or older copper. Report them, but don't "fix" them silently.
+   - `layout_check` skips pours / planes, text, drill holes and pad-to-pad spacing. Ask the user to run
+     **Tools > Verify Design** in PADS Layout as the final check and share the errors (position, layer, objects).
 
 Suggested order on a board like this:
 - power entry and regulators (wide)
@@ -102,7 +106,8 @@ Suggested order on a board like this:
   - `layout_route` therefore writes the `*ROUTE*` section of the ASCII and re-imports the design.
   - The connections of a net must be kept in tree order. The tool handles this.
 - **PADS Router is not used** by the pads MCP (no routing, no DRC), so no PADS Router license is needed.
-- PADS Layout COM has no Verify Design method, so the design-rule check stays a manual step in PADS Layout.
+- PADS Layout COM has no Verify Design method. `layout_check` therefore computes clearances itself from the ASCII,
+  and the full Verify Design stays a manual step in PADS Layout.
 - Handle power/GND planes with Pour/Plane areas. Leave those connections unrouted for the pour unless the user wants traces.
 
 ## Company and product rules (to be filled in)
