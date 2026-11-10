@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-AI 어시스턴트(Claude Code, Codex, GitHub Copilot)가 **PADS Logic(회로도)**와 **PADS Layout / PADS Router(PCB)** 9.x를
+AI 어시스턴트(Claude Code, Codex, GitHub Copilot)가 PADS Logic(회로도)와 PADS Layout / PADS Router(PCB) 9.x를
 COM 자동화로 다루게 해 주는 MCP 서버입니다.
 
 - **회로도**: 부품 배치, 와이어 연결, 전원/GND 심볼, 넷 라벨.
