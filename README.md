@@ -197,6 +197,22 @@ Then:
 |---|---|
 | `PADS_MCP_WORKDIR` | Work folder for schematic copies, temporary ASCII files and backups. Default: `<repo>\work` when run from a source checkout, otherwise `%USERPROFILE%\Documents\pads-mcp\work`. |
 
+### Uninstall
+
+Remove the entry for each client you set up, then restart that client.
+
+| Client | Remove the server | Remove the skill |
+|---|---|---|
+| Claude Code (plugin) | `claude plugin uninstall pads@pads-mcp`, then `claude plugin marketplace remove pads-mcp` | Removed with the plugin |
+| Claude Code (MCP server only) | `claude mcp remove pads --scope user` | Delete `%USERPROFILE%\.claude\skills\pads-pcb-design` |
+| OpenAI Codex | `codex mcp remove pads`, or delete the `[mcp_servers.pads]` block from `%USERPROFILE%\.codex\config.toml` | Delete `pads-pcb-design` from `%USERPROFILE%\.agents\skills\` or the repository's `.agents\skills\` |
+| VS Code + Copilot | Delete the `pads` entry from `mcp-config.json` or `mcp.json` | Delete `pads-pcb-design` from `%USERPROFILE%\.copilot\skills\` or `.github\skills\` |
+
+Optional cleanup:
+- `uv cache clean pads-mcp` deletes the cached builds. They only take disk space, and `uvx` rebuilds them when needed.
+- No command above deletes the work folder (`%USERPROFILE%\Documents\pads-mcp\work`, or `PADS_MCP_WORKDIR`).
+  It holds schematic copies and edit backups, so delete it yourself once you no longer need them.
+
 ## Where design knowledge lives (MCP vs skill)
 
 | Content | Location | Why |

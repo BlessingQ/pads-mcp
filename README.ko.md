@@ -195,6 +195,22 @@ tool_timeout_sec = 600      # 기본값 60초, PCB 편집 + DRC는 1분 이상 �
 |---|---|
 | `PADS_MCP_WORKDIR` | 회로도 복사본, 임시 ASCII, 백업을 두는 작업 폴더입니다. 소스 폴더에서 실행하면 `<repo>\work`, 그 외에는 `%USERPROFILE%\Documents\pads-mcp\work`가 기본값입니다. |
 
+### 제거
+
+설정한 클라이언트마다 등록을 지운 뒤 그 클라이언트를 다시 시작합니다.
+
+| 클라이언트 | 서버 제거 | 스킬 제거 |
+|---|---|---|
+| Claude Code (플러그인) | `claude plugin uninstall pads@pads-mcp` 후 `claude plugin marketplace remove pads-mcp` | 플러그인과 함께 제거됨 |
+| Claude Code (MCP 서버만) | `claude mcp remove pads --scope user` | `%USERPROFILE%\.claude\skills\pads-pcb-design` 삭제 |
+| OpenAI Codex | `codex mcp remove pads`, 또는 `%USERPROFILE%\.codex\config.toml`에서 `[mcp_servers.pads]` 블록 삭제 | `%USERPROFILE%\.agents\skills\` 또는 저장소 `.agents\skills\`에서 `pads-pcb-design` 삭제 |
+| VS Code + Copilot | `mcp-config.json` 또는 `mcp.json`에서 `pads` 항목 삭제 | `%USERPROFILE%\.copilot\skills\` 또는 `.github\skills\`에서 `pads-pcb-design` 삭제 |
+
+선택 정리:
+- `uv cache clean pads-mcp`로 캐시에 남은 빌드를 지웁니다. 디스크만 차지할 뿐이고, 필요하면 `uvx`가 다시 만듭니다.
+- 작업 폴더(`%USERPROFILE%\Documents\pads-mcp\work` 또는 `PADS_MCP_WORKDIR`)는 위 명령으로 지워지지 않습니다.
+  회로도 복사본과 수정 전 백업이 들어 있으니, 필요 없을 때 직접 지웁니다.
+
 ## 설계 지식은 어디에 두나 (MCP vs 스킬)
 
 | 내용 | 위치 | 이유 |
