@@ -8,7 +8,7 @@ import win32con
 import win32gui
 from mcp.server.fastmcp import FastMCP, Image
 
-from . import screenshot
+from . import guide, screenshot
 from .comworker import ComWorker, DialogWatcher, click_button, com_error_text, main_window
 from . import impedance
 from .layout import PadsLayout
@@ -51,6 +51,8 @@ Drawing guidance: place parts on the 100 mil grid with >= 600 mil clearance; pre
 local connections between nearby pins.
 
 PCB (PADS Layout) - all PCB coordinates are mm, y up. Layers: 1 = Top, N = Bottom.
+- Before placing parts or routing, call pads_guide once: the PCB design rules and workflow for this
+  pads-mcp version, plus the company rules from the user's local rules file. Follow it.
 - All routing is done in PADS Layout. There is no autorouter: when the user asks for (automatic)
   routing, plan every connection yourself and draw it with layout_route, many connections per call.
 - PADS Layout COM cannot draw traces: layout_route writes YOUR planned path into the design
@@ -95,7 +97,25 @@ async def pads_status() -> dict:
     """Show whether PADS Logic / PADS Layout are running, which files are open, and object counts."""
     return {"logic": await run(logic.status), "layout": await run(layout.status),
             "open_dialogs": watcher.current(), "auto_answered_dialogs": watcher.recent_auto()[-5:],
-            "workdir": WORKDIR}
+            "workdir": WORKDIR, "company_rules_file": guide.rules_file_status()}
+
+
+_guide_read = False
+GUIDE_HINT = "Call pads_guide() once before placing parts or routing: design rules and the company rules."
+
+
+def _hint(res):
+    return {**res, "read_first": GUIDE_HINT} if not _guide_read and isinstance(res, dict) else res
+
+
+@mcp.tool()
+async def pads_guide(topic: str = "pcb") -> str:
+    """Design guide of this pads-mcp version (topic 'pcb'): placement and routing rules, track widths,
+    the agent routing workflow, PADS pitfalls, and the company rules from the user's local rules file
+    (they override the general rules). Read it once before placing parts or routing a PCB."""
+    global _guide_read
+    _guide_read = True
+    return guide.guide(topic)
 
 
 @mcp.tool()
@@ -314,7 +334,7 @@ async def logic_import_ascii(path: str, save_as: str) -> dict:
 @mcp.tool()
 async def layout_status() -> dict:
     """Active PCB in PADS Layout: path, counts of components, nets, route segments, vias, unrouted connections."""
-    return await run(layout.status)
+    return _hint(await run(layout.status))
 
 
 @mcp.tool()
@@ -327,7 +347,7 @@ async def layout_open(path: str) -> dict:
 async def layout_overview() -> dict:
     """Start here for PCB work: board outline/bbox, electrical layers, stack-up, via types, net classes and
     rules, and every net with its unrouted-connection count (mm)."""
-    return await run(layout.overview, timeout=180)
+    return _hint(await run(layout.overview, timeout=180))
 
 
 @mcp.tool()
@@ -511,6 +531,8 @@ def _check() -> int:
     for name, progid in PROGIDS.items():
         found[name] = exe = _com_server(progid)
         print(f"  {'OK' if exe else '--'}  {name:12} {progid:26} {exe or 'not registered'}")
+    rules = guide.rules_file_status()
+    print(f"company rules: {rules['path']} ({'found' if rules['exists'] else 'none'})")
     if not (found["PADS Logic"] or found["PADS Layout"]):
         print("PADS Logic/Layout COM servers not found: install PADS 9.x (and run it once).")
         return 1

@@ -6,7 +6,8 @@ description: PCB placement and routing rules and pitfalls for PADS Layout. Use w
 # PADS PCB design rules
 
 This document covers **what to follow** (design knowledge). The pads MCP tools cover **how to operate PADS** (mechanism).
-Add company- or product-specific rules to the last section of this file. It is easier to maintain when the rules stay out of the code.
+The pads MCP also serves this document with `pads_guide`, from the same release as its tools, followed by the company rules
+(see the last section).
 
 ## Working principles
 
@@ -110,11 +111,16 @@ Suggested order on a board like this:
   and the full Verify Design stays a manual step in PADS Layout.
 - Handle power/GND planes with Pour/Plane areas. Leave those connections unrouted for the pour unless the user wants traces.
 
-## Company and product rules (to be filled in)
+## Company and product rules
 
-<!-- Add company rules here. These take priority over the general rules above. -->
-- Fab minimum track/space: (e.g.) 0.15 / 0.15 mm
-- Default via: (e.g.) drill 0.3 mm / pad 0.6 mm
-- Default stackup: (e.g.) 4 layers, 1.6 mm, 1 oz outer / 0.5 oz inner
-- Isolation clearance: (e.g.) ≥ 4 mm between `GND` and `SGND`
-- Mechanical constraints: (e.g.) mounting hole positions, connector positions, height limits
+Company- and product-specific rules take priority over the general rules above. They are not kept in this document:
+each PC has a local Markdown file, `%USERPROFILE%\Documents\pads-mcp\rules.md` (or the `PADS_MCP_RULES` path),
+which updates never overwrite. `pads_guide` appends it below this section. If you are reading this as a skill,
+call `pads_guide` once to get them.
+
+If there is no such file, ask the user for these values instead of guessing:
+- Fab minimum track/space (e.g. 0.15 / 0.15 mm)
+- Default via (e.g. drill 0.3 mm / pad 0.6 mm)
+- Default stack-up (e.g. 4 layers, 1.6 mm, 1 oz outer / 0.5 oz inner)
+- Isolation clearance (e.g. ≥ 4 mm between `GND` and `SGND`)
+- Mechanical constraints (e.g. mounting hole positions, connector positions, height limits)

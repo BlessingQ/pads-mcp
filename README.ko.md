@@ -63,7 +63,7 @@ PCB를 한 번 편집할 때마다 설계 전체를 다시 가져옵니다. 부�
 
 ## 도구
 
-**공통**: `pads_status`, `pads_screenshot`, `pads_dialogs`, `pads_click_dialog`
+**공통**: `pads_guide` (이 버전의 설계 규칙 + 회사 규칙), `pads_status`, `pads_screenshot`, `pads_dialogs`, `pads_click_dialog`
 
 **PADS Logic (회로도, mil 단위)**
 - 파일: `logic_open`, `logic_new`, `logic_save`, `logic_export` (ascii/netlist), `logic_import_ascii`, `logic_undo`
@@ -153,7 +153,7 @@ PCB를 한 번 편집할 때마다 설계 전체를 다시 가져옵니다. 부�
 ```powershell
 claude mcp add --scope user --transport stdio pads -- uvx --from git+https://github.com/BlessingQ/pads-mcp@latest pads-mcp
 ```
-스킬도 쓰려면 `skills\pads-pcb-design` 폴더를 `%USERPROFILE%\.claude\skills\`에 복사합니다.
+스킬은 복사하지 않아도 됩니다. 서버가 같은 설계 규칙을 `pads_guide`로 제공합니다.
 `claude mcp list`에서 `pads ... ✔ Connected`가 보이거나, 세션 안에서 `/mcp`로 확인할 수 있으면 됩니다.
 
 ### OpenAI Codex (CLI / IDE 확장 / 앱)
@@ -168,7 +168,7 @@ tool_timeout_sec = 600      # 기본값 60초, PCB 편집은 1분 이상 걸릴 
 ```
 `codex mcp add pads -- uvx --from git+https://github.com/BlessingQ/pads-mcp@latest pads-mcp`로 추가해도 됩니다.
 이 명령에는 타임아웃 옵션이 없으므로, 추가한 뒤 위의 타임아웃 두 줄을 `config.toml`에 직접 넣어 주세요.
-- 스킬: `skills\pads-pcb-design` 폴더를 `%USERPROFILE%\.agents\skills\`(사용자 전체) 또는 저장소의 `.agents\skills\`에 복사합니다.
+- 설계 규칙: 서버가 `pads_guide`로 제공하므로 스킬을 복사할 필요가 없습니다.
 - `codex mcp list` 또는 세션 안의 `/mcp`로 확인합니다.
 
 ### VS Code + GitHub Copilot
@@ -187,7 +187,7 @@ tool_timeout_sec = 600      # 기본값 60초, PCB 편집은 1분 이상 걸릴 
 
 그다음:
 - Copilot Chat에서 **Agent** 에이전트로 사용하고, Tools 목록에서 `pads`가 켜져 있는지 확인합니다.
-- 스킬: `skills\pads-pcb-design` 폴더를 `%USERPROFILE%\.copilot\skills\` 또는 작업 공간의 `.github\skills\`에 복사합니다.
+- 설계 규칙: 서버가 `pads_guide`로 제공하므로 스킬을 복사할 필요가 없습니다.
 - Copilot Business/Enterprise는 조직 관리자가 **MCP servers in Copilot** 정책을 켜야 합니다. 기본값은 꺼짐입니다.
 
 ### 설정
@@ -195,12 +195,26 @@ tool_timeout_sec = 600      # 기본값 60초, PCB 편집은 1분 이상 걸릴 
 | 환경 변수 | 의미 |
 |---|---|
 | `PADS_MCP_WORKDIR` | 회로도 복사본, 임시 ASCII, 백업을 두는 작업 폴더입니다. 소스 폴더에서 실행하면 `<repo>\work`, 그 외에는 `%USERPROFILE%\Documents\pads-mcp\work`가 기본값입니다. |
+| `PADS_MCP_RULES` | `pads_guide`가 덧붙이는 회사 규칙 파일입니다. 기본값은 `%USERPROFILE%\Documents\pads-mcp\rules.md`입니다. |
+
+### 회사 규칙
+
+회사나 제품별 규칙은 `%USERPROFILE%\Documents\pads-mcp\rules.md`에 마크다운으로 적습니다. 형식은 자유입니다.
+`pads_guide`는 호출될 때마다 이 파일을 읽어 설계 가이드 뒤에 붙이므로, 고치면 바로 반영되고 업데이트해도 덮어쓰지 않습니다.
+팀 전체가 한 파일을 쓰려면 `PADS_MCP_RULES`로 공유 위치(예: 네트워크 드라이브)의 파일을 지정합니다.
+어떤 파일을 쓰는지는 `pads-mcp --check`와 `pads_status`에 나옵니다. 예시:
+```markdown
+- 제조사 최소 선폭/간격: 0.15 / 0.15 mm
+- 기본 비아: 드릴 0.3 mm / 패드 0.6 mm
+- 적층: 4층, 1.6 mm, 외층 1 oz / 내층 0.5 oz
+- 절연: GND와 SGND 사이 4 mm 이상
+```
 
 ### 제거
 
 설정한 클라이언트마다 등록을 지운 뒤 그 클라이언트를 다시 시작합니다.
 
-| 클라이언트 | 서버 제거 | 스킬 제거 |
+| 클라이언트 | 서버 제거 | 직접 복사한 스킬 제거 (0.5.0 이전 설정) |
 |---|---|---|
 | Claude Code (플러그인) | `claude plugin uninstall pads@pads-mcp` 후 `claude plugin marketplace remove pads-mcp` | 플러그인과 함께 제거됨 |
 | Claude Code (MCP 서버만) | `claude mcp remove pads --scope user` | `%USERPROFILE%\.claude\skills\pads-pcb-design` 삭제 |
@@ -209,17 +223,19 @@ tool_timeout_sec = 600      # 기본값 60초, PCB 편집은 1분 이상 걸릴 
 
 선택 정리:
 - `uv cache clean pads-mcp`로 캐시에 남은 빌드를 지웁니다. 디스크만 차지할 뿐이고, 필요하면 `uvx`가 다시 만듭니다.
-- 작업 폴더(`%USERPROFILE%\Documents\pads-mcp\work` 또는 `PADS_MCP_WORKDIR`)는 위 명령으로 지워지지 않습니다.
-  회로도 복사본과 수정 전 백업이 들어 있으니, 필요 없을 때 직접 지웁니다.
+- 작업 폴더(`%USERPROFILE%\Documents\pads-mcp\work` 또는 `PADS_MCP_WORKDIR`)와 회사 규칙 파일은 위 명령으로 지워지지 않습니다.
+  작업 폴더에는 회로도 복사본과 수정 전 백업이 들어 있으니, 필요 없을 때 직접 지웁니다.
 
 ## 설계 지식은 어디에 두나 (MCP vs 스킬)
 
 | 내용 | 위치 | 이유 |
 |---|---|---|
 | PADS 조작 방법, 반드시 지켜야 하는 PADS 규칙(핀당 와이어 1개, SMD 패드는 자기 층에만 있음 등) | MCP 코드 + 서버 설명 | 올바른 동작에 필요하고 도구와 함께 바뀜 |
-| 배치·배선 규칙, 주의사항, 회사 기준(제조사 한계, 적층, 절연 거리) | **스킬** `skills/pads-pcb-design/SKILL.md` | 회사·제품마다 다르고, 마크다운이라 누구나 고칠 수 있으며, 필요할 때만 읽힘 |
+| 배치·배선 규칙, 배선 절차, 주의사항 | `skills/pads-pcb-design/SKILL.md`를 패키지에 넣어 `pads_guide`로 제공 | 도구와 같은 릴리스라서 서버에 없는 도구를 문서가 설명하는 일이 없고, 필요할 때만 읽힘 |
+| 회사 기준(제조사 한계, 적층, 절연 거리) | 로컬 `rules.md`, `pads_guide`가 뒤에 붙임 | 회사·제품마다 다르고, 업데이트해도 덮어쓰지 않음 |
 
-Claude Code 플러그인은 둘을 함께 설치합니다. Codex와 Copilot은 같은 `SKILL.md`를 복사해서 씁니다.
+모든 클라이언트가 `pads_guide`로 가이드를 받습니다. Claude Code 플러그인은 같은 파일을 스킬로도 설치하므로,
+Claude Code는 PCB 작업이 나오면 스킬을 알아서 불러옵니다.
 
 ## 릴리스 (관리자)
 

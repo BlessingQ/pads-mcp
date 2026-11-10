@@ -11,7 +11,7 @@
       "name": "pads",
       "source": "./",
       "description": "PADS 9.x schematic drawing and agent-planned PCB routing (MCP server via uvx) + PCB design-rule skill",
-      "version": "0.4.0"
+      "version": "0.5.0"
     }
   ]
 }

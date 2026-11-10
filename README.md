@@ -66,7 +66,7 @@ Each PCB edit re-imports the whole design. That takes about 30–60 s on a 160-p
 
 ## Tools
 
-**Common**: `pads_status`, `pads_screenshot`, `pads_dialogs`, `pads_click_dialog`
+**Common**: `pads_guide` (design rules of this version + company rules), `pads_status`, `pads_screenshot`, `pads_dialogs`, `pads_click_dialog`
 
 **PADS Logic (schematic, mils)**
 - Files: `logic_open`, `logic_new`, `logic_save`, `logic_export` (ascii/netlist), `logic_import_ascii`, `logic_undo`
@@ -156,7 +156,7 @@ The repository is itself the marketplace (`.claude-plugin/marketplace.json`), so
 ```powershell
 claude mcp add --scope user --transport stdio pads -- uvx --from git+https://github.com/BlessingQ/pads-mcp@latest pads-mcp
 ```
-For the skill, copy `skills\pads-pcb-design` to `%USERPROFILE%\.claude\skills\`.
+No skill copy is needed: the server serves the same design rules with `pads_guide`.
 Check with `claude mcp list` (`pads ... ✔ Connected`) or `/mcp` in a session.
 
 ### OpenAI Codex (CLI / IDE extension / app)
@@ -171,7 +171,7 @@ tool_timeout_sec = 600      # default 60 s; a PCB edit can take a minute or more
 ```
 `codex mcp add pads -- uvx --from git+https://github.com/BlessingQ/pads-mcp@latest pads-mcp` also works.
 It has no timeout options, so add the two timeout lines to `config.toml` afterwards.
-- Skill: copy `skills\pads-pcb-design` to `%USERPROFILE%\.agents\skills\` (user) or `.agents\skills\` in a repository.
+- Design rules: served by the server (`pads_guide`), so there is no skill to copy.
 - Check with `codex mcp list` or `/mcp` in a session.
 
 ### VS Code + GitHub Copilot
@@ -190,7 +190,7 @@ Use either of these configuration files.
 
 Then:
 - Use the tools from Copilot Chat with the **Agent** agent, and check that `pads` is enabled under Tools.
-- Skill: copy `skills\pads-pcb-design` to `%USERPROFILE%\.copilot\skills\` or the workspace `.github\skills\`.
+- Design rules: served by the server (`pads_guide`), so there is no skill to copy.
 - Copilot Business/Enterprise: an organization admin must enable the **MCP servers in Copilot** policy. It is disabled by default.
 
 ### Settings
@@ -198,12 +198,26 @@ Then:
 | Environment variable | Meaning |
 |---|---|
 | `PADS_MCP_WORKDIR` | Work folder for schematic copies, temporary ASCII files and backups. Default: `<repo>\work` when run from a source checkout, otherwise `%USERPROFILE%\Documents\pads-mcp\work`. |
+| `PADS_MCP_RULES` | Company rules file appended by `pads_guide`. Default: `%USERPROFILE%\Documents\pads-mcp\rules.md`. |
+
+### Company rules
+
+Write your company's or product's rules into `%USERPROFILE%\Documents\pads-mcp\rules.md` (Markdown, any structure).
+`pads_guide` appends the file to the design guide on every call, so edits apply at once, and updates never overwrite it.
+To share one file across the team, point `PADS_MCP_RULES` at it (e.g. on a network drive).
+`pads-mcp --check` and `pads_status` show which file is used. Example:
+```markdown
+- Fab minimum track/space: 0.15 / 0.15 mm
+- Default via: drill 0.3 mm / pad 0.6 mm
+- Stack-up: 4 layers, 1.6 mm, 1 oz outer / 0.5 oz inner
+- Isolation: at least 4 mm between GND and SGND
+```
 
 ### Uninstall
 
 Remove the entry for each client you set up, then restart that client.
 
-| Client | Remove the server | Remove the skill |
+| Client | Remove the server | Remove a skill copied by hand (setups before 0.5.0) |
 |---|---|---|
 | Claude Code (plugin) | `claude plugin uninstall pads@pads-mcp`, then `claude plugin marketplace remove pads-mcp` | Removed with the plugin |
 | Claude Code (MCP server only) | `claude mcp remove pads --scope user` | Delete `%USERPROFILE%\.claude\skills\pads-pcb-design` |
@@ -212,17 +226,19 @@ Remove the entry for each client you set up, then restart that client.
 
 Optional cleanup:
 - `uv cache clean pads-mcp` deletes the cached builds. They only take disk space, and `uvx` rebuilds them when needed.
-- No command above deletes the work folder (`%USERPROFILE%\Documents\pads-mcp\work`, or `PADS_MCP_WORKDIR`).
-  It holds schematic copies and edit backups, so delete it yourself once you no longer need them.
+- No command above deletes the work folder (`%USERPROFILE%\Documents\pads-mcp\work`, or `PADS_MCP_WORKDIR`) or the
+  company rules file. The work folder holds schematic copies and edit backups, so delete it yourself once you no longer need them.
 
 ## Where design knowledge lives (MCP vs skill)
 
 | Content | Location | Why |
 |---|---|---|
 | How to operate PADS, and PADS rules that must hold (one wire per pin, SMD pads on their own layer, …) | MCP code + server instructions | Needed for correct behavior; changes together with the tools |
-| Placement/routing rules, cautions, company standards (fab limits, stack-up, isolation distances) | **Skill** `skills/pads-pcb-design/SKILL.md` | Changes per company and product; editable markdown; loaded only when relevant |
+| Placement/routing rules, routing workflow, cautions | `skills/pads-pcb-design/SKILL.md`, shipped inside the package and served by `pads_guide` | Same release as the tools, so the guide never describes tools the server does not have; read only when needed |
+| Company standards (fab limits, stack-up, isolation distances) | Local `rules.md`, appended by `pads_guide` | Differs per company and product; updates never overwrite it |
 
-The Claude Code plugin installs both. Codex and Copilot use the same `SKILL.md` by copying it.
+Every client gets the guide through `pads_guide`. The Claude Code plugin also installs the same file as a skill, which
+Claude Code loads by itself when a PCB task comes up.
 
 ## Releasing (maintainers)
 
